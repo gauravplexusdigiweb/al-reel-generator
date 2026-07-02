@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/.next
+**/*.tsbuildinfo
+.git
+data
+services/ai-service/.venv
+services/ai-service/models
+**/__pycache__
+.env
+.env.*
+*.log

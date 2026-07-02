@@ -1,6 +1,10 @@
-# Local infra for AI Reel Generator (personal use).
-# App services (api, worker, web, ai-service) run on the host via pnpm/python;
-# this file provides the backing infra only.
+# AI Reel Generator (personal use).
+#
+#   pnpm infra:up                          -> just Postgres + Redis + Ollama (hybrid dev)
+#   docker compose --profile full up --build  -> the whole stack in containers
+#
+# The app services (api, worker, web, ai-service) live under the "full" profile so
+# infra-only users don't trigger image builds.
 
 services:
   postgres:
@@ -41,11 +45,94 @@ services:
       - "11434:11434"
     volumes:
       - ollamadata:/root/.ollama
-    # After first `docker compose up`, pull a model once:
-    #   docker compose exec ollama ollama pull llama3.1
-    # (or qwen2.5). GPU users can add a `deploy.resources.reservations.devices` block.
+    # After first start, pull a model once:
+    #   docker compose exec ollama ollama pull qwen2.5:7b
+    # --- GPU (NVIDIA) users: uncomment to let Ollama use the GPU ---
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # ---- App services (profile: full) ----
+  ai-service:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: services/ai-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      WHISPER_DEVICE: ${WHISPER_DEVICE:-cpu}
+      WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-int8}
+    ports:
+      - "8000:8000"
+    volumes:
+      - appdata:/data
+    # GPU users: set WHISPER_DEVICE=cuda and add the same `deploy` block as ollama.
+
+  api:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    # Apply migrations on startup, then serve.
+    command: ["sh", "-c", "pnpm --filter @arg/api prisma:deploy && node apps/api/dist/main.js"]
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgresql://arg:arg@postgres:5432/arg?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      API_PORT: 4000
+      DATA_DIR: /data
+      AI_SERVICE_URL: http://ai-service:8000
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+    ports:
+      - "4000:4000"
+    volumes:
+      - appdata:/data
+
+  worker:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    command: ["node", "apps/api/dist/worker.js"]
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgresql://arg:arg@postgres:5432/arg?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DATA_DIR: /data
+      AI_SERVICE_URL: http://ai-service:8000
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+    volumes:
+      - appdata:/data
+
+  web:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    command: ["pnpm", "--filter", "@arg/web", "start"]
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
 
 volumes:
   pgdata:
   redisdata:
   ollamadata:
+  appdata:

@@ -74,6 +74,40 @@ pnpm dev:web
 - API + Swagger:  http://localhost:4000/docs
 - Media served at:  http://localhost:4000/files/...
 
+## Run everything in Docker (alternative)
+
+Instead of the hybrid dev workflow above, run the whole stack in containers:
+
+```bash
+docker compose --profile full up --build
+docker compose exec ollama ollama pull qwen2.5:7b   # one-time
+```
+
+This builds and runs `api`, `worker`, `web`, and `ai-service` alongside Postgres,
+Redis, and Ollama. The API applies DB migrations on startup. Media persists in the
+`appdata` volume. (`pnpm infra:up` still starts only the infra services for the
+hybrid workflow.)
+
+## GPU (optional)
+
+CPU works out of the box. On an NVIDIA GPU:
+
+- Set `WHISPER_DEVICE=cuda` and `WHISPER_COMPUTE_TYPE=float16` for faster transcription.
+- Uncomment the `deploy.resources.reservations.devices` blocks for `ollama` (and
+  `ai-service`) in `docker-compose.yml` so they can use the GPU.
+
+## Settings
+
+Pipeline knobs (candidate count, duration buckets, sample fps, caption preset,
+karaoke, retain-intermediates) can be changed live at **/settings** in the web UI
+(persisted in the `app_settings` table, layered over `.env`) — no restart needed.
+
+## Tests
+
+```bash
+pnpm --filter @arg/api test   # unit tests for crop/scoring/highlights/captions + an ffmpeg smoke
+```
+
 ## Flow
 
 Upload a video in the UI → watch the pipeline
