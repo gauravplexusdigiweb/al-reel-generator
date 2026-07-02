@@ -43,13 +43,16 @@ or published to third parties.
 ## How it works
 
 ```
-Upload ─▶ Validate ─▶ Transcode & extract ─▶ Transcribe ─▶ Scene detection
-   ─▶ Face detection ─▶ Highlight detection ─▶ Render (crop + captions + thumbs + score + title)
-   ─▶ Ready ─▶ Admin review ─▶ Publish / Download
+Upload ─▶ Validate ─▶ Transcode & extract ─▶ Transcribe (word-level) ─▶ Scene detection
+   ─▶ Face detection ─▶ Highlight detection (sentence-aligned) ─▶ Render ─▶ Ready ─▶ Review ─▶ Export
+
+Render per reel: active-speaker 9:16 crop (or blurred-fill) → karaoke captions →
+                 loudness-normalized audio → 3 thumbnails → 8-factor score → AI title/tags
 ```
 
 Each step is a resumable, retryable job on a Redis/BullMQ queue; the render stage fans out (one
-job per candidate reel) with a race-free fan-in.
+job per candidate reel) with a race-free fan-in. Intermediates (sampled frames, audio) are
+auto-purged when no longer needed, and a failed video can be **retried from its last incomplete step**.
 
 ## Architecture
 
@@ -81,15 +84,19 @@ job per candidate reel) with a race-free fan-in.
 
 | Concern | Choice |
 |---|---|
-| Backend / worker | NestJS (REST + Swagger) + BullMQ |
-| Queue | Redis + BullMQ (flows) |
+| Backend / worker | NestJS (REST + Swagger) + BullMQ (flows) |
+| Queue / cache | Redis |
 | Database | PostgreSQL + Prisma |
 | Storage | Local filesystem (swappable `StorageService`) |
-| Media | FFmpeg / ffprobe (static binaries) |
-| Speech-to-text | faster-whisper |
+| Media | FFmpeg / ffprobe (bundled static binaries) |
+| Speech-to-text | faster-whisper (word-level timestamps) |
 | Scenes / faces | PySceneDetect / MediaPipe |
-| LLM | Ollama (default `qwen2.5:7b`), pluggable |
+| LLM | Ollama (default `qwen2.5:7b`), pluggable `LlmProvider` |
+| Captions | ASS subtitles (karaoke `\k`) burned via FFmpeg |
+| Zip export | archiver |
 | Frontend | Next.js (App Router) + shadcn/ui + Tailwind |
+| Tests | Jest + ts-jest (unit + ffmpeg smoke) |
+| Packaging | Docker Compose (`full` profile) |
 | Monorepo | pnpm workspaces |
 
 ## Monorepo layout
@@ -98,12 +105,15 @@ job per candidate reel) with a race-free fan-in.
 al-reel-generator/
   apps/
     api/            NestJS API + BullMQ worker + Prisma schema/migrations
-    web/            Next.js + shadcn/ui admin panel
+      src/videos, reels, health, settings   REST modules
+      src/pipeline/steps, util               pipeline steps + crop/captions/scoring/aspect utils
+    web/            Next.js + shadcn/ui admin panel (upload, review, /settings)
   services/
-    ai-service/     Python FastAPI (Whisper / PySceneDetect / MediaPipe)
+    ai-service/     Python FastAPI (Whisper / PySceneDetect / MediaPipe) + Dockerfile
   packages/
     shared/         Shared TypeScript DTOs (api + web)
   docs/             PRD + DEVELOPMENT.md
+  Dockerfile.node   api/worker/web image
   docker-compose.yml
 ```
 
@@ -156,32 +166,47 @@ Run the tests with `pnpm --filter @arg/api test`.
 
 ## Using it
 
-1. Upload a video in the web UI.
-2. Watch the pipeline progress live.
-3. Review candidate reels: video player, score breakdown, transcript, tags, 3 thumbnails.
-4. Trim / regenerate / pick a thumbnail as needed.
-5. Approve and **Publish** (exports to `data/published/`) or **Download** the reel.
+1. Upload a video in the web UI (or `POST /videos`).
+2. Watch the pipeline progress live; **retry** if a step fails.
+3. Review candidate reels: player, score breakdown, transcript, tags, 3 thumbnails — **filter & sort** the grid.
+4. **Edit** the AI title/tags/captions, **trim**, **regenerate**, switch **aspect ratio**, or make a **manual clip**.
+5. Approve, then **Publish** (exports to `data/published/`), **Download**, or **Export approved** as a zip.
+6. Tune the pipeline anytime at **/settings** — no restart.
 
 ## Key API endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/videos` | Upload a video, start the pipeline |
+| GET | `/videos` \| `/videos/:id` | List / get videos |
 | GET | `/videos/:id/status` | Pipeline progress (per-step) |
 | GET | `/videos/:id/reels` | Candidate reels (scored, ordered) |
+| POST | `/videos/:id/reels` | Create a **manual clip** (custom window + aspect) |
+| GET | `/videos/:id/reels/export.zip` | **Batch zip** of rendered reels (default: approved + published) |
+| POST | `/videos/:id/retry` | **Retry** from the earliest incomplete step |
+| DELETE | `/videos/:id` | Delete a video + its reels + files |
+| PATCH | `/reels/:id` | **Edit** title / tags / captions |
 | POST | `/reels/:id/approve` \| `/reject` \| `/publish` | Review actions |
-| POST | `/reels/:id/trim` \| `/regenerate` | Re-render a reel |
+| POST | `/reels/:id/trim` \| `/regenerate` | Re-render (regenerate accepts a new aspect ratio) |
 | POST | `/reels/:id/thumbnail` | Select a thumbnail |
 | GET | `/reels/:id/download` | Download the rendered reel |
+| DELETE | `/reels/:id` | Delete a reel + its files |
+| GET / PUT | `/settings` | Read / update live pipeline settings |
+| GET | `/health` \| `/health/services` | Liveness / dependency reachability |
 
 Interactive docs at `/docs` (Swagger).
 
 ## Configuration
 
-All settings live in `.env` (see `.env.example`) — database/Redis URLs, `DATA_DIR`, upload limits,
-allowed formats, candidate count, duration buckets, frame sample rate, `AI_SERVICE_URL`,
-`OLLAMA_MODEL`, and Whisper model/device. Pick a smaller `OLLAMA_MODEL` (e.g. `qwen2.5:3b`) for
-faster processing on CPU-only machines.
+Defaults live in `.env` (see `.env.example`): database/Redis URLs (`POSTGRES_PORT` for a custom
+host port), `DATA_DIR`, upload limits, allowed formats, candidate count, duration buckets, frame
+sample rate, `RETAIN_INTERMEDIATES`, `AI_SERVICE_URL`, `OLLAMA_MODEL`, Whisper model/device, and
+caption options (`CAPTION_PRESET`, `CAPTION_KARAOKE`).
+
+Most pipeline knobs can also be changed **live from the `/settings` UI** (persisted in the
+`app_settings` table, layered over `.env`) — candidate count, duration buckets, sample rate,
+caption preset/karaoke, and retain-intermediates, all without a restart. On CPU-only machines,
+pick a smaller `OLLAMA_MODEL` (e.g. `qwen2.5:3b`) for faster processing.
 
 ## Roadmap (Phase 2)
 
