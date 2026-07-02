@@ -1,4 +1,7 @@
 import type { TranscriptSegment } from '@arg/shared';
+import type { Dims } from './aspect';
+
+const DEFAULT_DIMS: Dims = { w: 1080, h: 1920 };
 
 /** Caption look; colours are ASS `&HAABBGGRR`. */
 export interface CaptionStyle {
@@ -64,7 +67,7 @@ function inlineColour(c: string): string {
   return `&H${hex.slice(-6)}&`;
 }
 
-function header(style: CaptionStyle, karaoke: boolean): string {
+function header(style: CaptionStyle, karaoke: boolean, dims: Dims): string {
   // For karaoke, unsung text is Secondary(text colour) and sweeps to Primary(highlight).
   // For plain captions, Primary is the visible text colour.
   const primary = karaoke ? style.highlight : style.text;
@@ -73,8 +76,8 @@ function header(style: CaptionStyle, karaoke: boolean): string {
   return [
     '[Script Info]',
     'ScriptType: v4.00+',
-    'PlayResX: 1080',
-    'PlayResY: 1920',
+    `PlayResX: ${dims.w}`,
+    `PlayResY: ${dims.h}`,
     'WrapStyle: 0',
     '',
     '[V4+ Styles]',
@@ -112,6 +115,7 @@ export function buildAssSubtitle(
   reelStart: number,
   reelEnd: number,
   style?: CaptionStyle | string,
+  dims: Dims = DEFAULT_DIMS,
 ): string | null {
   const st = resolveCaptionStyle(style);
   const events = segmentsInWindow(segments, reelStart, reelEnd);
@@ -119,7 +123,7 @@ export function buildAssSubtitle(
   const body = events
     .map((e) => `Dialogue: 0,${assTime(e.start)},${assTime(e.end)},Default,,0,0,0,,${e.text}`)
     .join('\n');
-  return `${header(st, false)}\n${body}\n`;
+  return `${header(st, false, dims)}\n${body}\n`;
 }
 
 /** Word-level "karaoke" captions using ASS \k timing. Requires word timestamps. */
@@ -128,6 +132,7 @@ export function buildKaraokeAss(
   reelStart: number,
   reelEnd: number,
   style?: CaptionStyle | string,
+  dims: Dims = DEFAULT_DIMS,
 ): string | null {
   const st = resolveCaptionStyle(style);
   const events = segmentsInWindow(segments, reelStart, reelEnd);
@@ -152,7 +157,7 @@ export function buildKaraokeAss(
       lines.push(`Dialogue: 0,${assTime(e.start)},${assTime(e.end)},Default,,0,0,0,,${textOverride}${e.text}`);
     }
   }
-  return `${header(st, true)}\n${lines.join('\n')}\n`;
+  return `${header(st, true, dims)}\n${lines.join('\n')}\n`;
 }
 
 /**
@@ -165,12 +170,13 @@ export function buildCaptions(
   reelEnd: number,
   style?: CaptionStyle | string,
   preferKaraoke = true,
+  dims: Dims = DEFAULT_DIMS,
 ): string | null {
   const inWin = segmentsInWindow(segments, reelStart, reelEnd);
   if (inWin.length === 0) return null;
   const withWords = inWin.filter((s) => s.words && s.words.length).length;
   const karaoke = preferKaraoke && withWords / inWin.length >= 0.5;
   return karaoke
-    ? buildKaraokeAss(segments, reelStart, reelEnd, style)
-    : buildAssSubtitle(segments, reelStart, reelEnd, style);
+    ? buildKaraokeAss(segments, reelStart, reelEnd, style, dims)
+    : buildAssSubtitle(segments, reelStart, reelEnd, style, dims);
 }

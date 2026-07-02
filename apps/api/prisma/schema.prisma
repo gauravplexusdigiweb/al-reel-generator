@@ -163,6 +163,7 @@ model Reel {
   filePath       String?
   suggestedTitle String?
   needsRerender  Boolean    @default(false)
+  aspectRatio    String     @default("9:16")
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
@@ -224,6 +225,14 @@ model ReelThumbnail {
   reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
 
   @@map("reel_thumbnails")
+}
+
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("app_settings")
 }
 
 model AdminReview {

@@ -99,6 +99,7 @@ export interface ReelDto {
   tags: string[];
   fileUrl: string | null;
   needsRerender: boolean;
+  aspectRatio: string;
   score: ReelScoreDto | null;
   thumbnails: ThumbnailDto[];
   transcript: TranscriptSegment[];
@@ -141,6 +142,7 @@ export interface TrimReelRequest {
 
 export interface RegenerateReelRequest {
   durationBucket?: DurationBucket;
+  aspectRatio?: string;
 }
 
 export interface SelectThumbnailRequest {

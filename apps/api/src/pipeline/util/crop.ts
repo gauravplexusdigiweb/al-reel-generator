@@ -1,7 +1,7 @@
 import type { FaceSample } from '@arg/shared';
+import type { Dims } from './aspect';
 
-const TARGET_W = 1080;
-const TARGET_H = 1920; // 9:16
+const DEFAULT_TARGET: Dims = { w: 1080, h: 1920 }; // 9:16
 const MAX_KEYFRAMES = 12;
 const EMA_ALPHA = 0.35;
 
@@ -56,12 +56,13 @@ export function windowHasFace(
  * 9:16 fill for face-less scenes: the whole frame fits inside a blurred, zoomed
  * copy of itself — far more polished than a hard center-crop.
  */
-export function buildBlurFillFilter(): string {
+export function buildBlurFillFilter(target: Dims = DEFAULT_TARGET): string {
+  const { w, h } = target;
   return (
     `split=2[bg][fg];` +
-    `[bg]scale=${TARGET_W}:${TARGET_H}:force_original_aspect_ratio=increase,` +
-    `crop=${TARGET_W}:${TARGET_H},gblur=sigma=24[bgb];` +
-    `[fg]scale=${TARGET_W}:${TARGET_H}:force_original_aspect_ratio=decrease[fgs];` +
+    `[bg]scale=${w}:${h}:force_original_aspect_ratio=increase,` +
+    `crop=${w}:${h},gblur=sigma=24[bgb];` +
+    `[fg]scale=${w}:${h}:force_original_aspect_ratio=decrease[fgs];` +
     `[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1`
   );
 }
@@ -77,20 +78,22 @@ export function buildCropFilter(
   endSec: number,
   srcW: number,
   srcH: number,
+  target: Dims = DEFAULT_TARGET,
 ): string {
   const dur = Math.max(0.1, endSec - startSec);
+  const aspect = target.w / target.h;
 
-  // 9:16 crop region within the source.
-  let cropW = even(srcH * (9 / 16));
+  // Target-aspect crop region within the source.
+  let cropW = even(srcH * aspect);
   let cropH = srcH;
   if (cropW > srcW) {
     cropW = srcW;
-    cropH = even(srcW * (16 / 9));
+    cropH = even(srcW / aspect);
   }
   const maxX = Math.max(0, srcW - cropW);
   const maxY = Math.max(0, srcH - cropH);
 
-  const scaleTail = `scale=${TARGET_W}:${TARGET_H}:force_original_aspect_ratio=increase,crop=${TARGET_W}:${TARGET_H},setsar=1`;
+  const scaleTail = `scale=${target.w}:${target.h}:force_original_aspect_ratio=increase,crop=${target.w}:${target.h},setsar=1`;
 
   // Collect in-window samples, tracking the speaker across frames.
   const inWindow = faces

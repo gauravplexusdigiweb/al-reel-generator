@@ -8,6 +8,7 @@ import { LlmModule } from './llm/llm.module';
 import { AiModule } from './ai/ai.module';
 import { QueueModule } from './queue/queue.module';
 import { CommonModule } from './common/common.module';
+import { SettingsModule } from './settings/settings.module';
 
 /** Shared infrastructure imported by both the API app and the worker app. */
 @Module({
@@ -24,6 +25,7 @@ import { CommonModule } from './common/common.module';
     AiModule,
     QueueModule,
     CommonModule,
+    SettingsModule,
   ],
 })
 export class CoreModule {}

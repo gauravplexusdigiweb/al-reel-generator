@@ -1,7 +1,7 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Clapperboard } from 'lucide-react';
+import { Clapperboard, Settings } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { ServiceHealth } from '@/components/service-health';
 
@@ -23,8 +23,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <span className="ml-2 rounded bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
               local
             </span>
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-3">
               <ServiceHealth />
+              <Link
+                href="/settings"
+                className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+              >
+                <Settings className="h-4 w-4" /> Settings
+              </Link>
             </div>
           </div>
         </header>

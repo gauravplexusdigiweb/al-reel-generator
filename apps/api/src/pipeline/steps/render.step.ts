@@ -1,18 +1,18 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import type { FaceSample, SceneDto, TranscriptSegment } from '@arg/shared';
-import type { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../storage/storage.service';
 import { FfmpegService } from '../../media/ffmpeg.service';
 import { LlmService } from '../../llm/llm.service';
+import { SettingsService } from '../../settings/settings.service';
 import { StepTracker } from '../step-tracker.service';
 import { pickRendition } from '../util/inputs';
 import { buildCropFilter, buildBlurFillFilter, windowHasFace } from '../util/crop';
 import { buildCaptions } from '../util/captions';
+import { aspectDims } from '../util/aspect';
 import { segmentsInWindow, windowText } from '../util/highlights';
 import { computeScores } from '../util/scoring';
 
@@ -25,25 +25,17 @@ function escapeSubtitlePath(p: string): string {
 
 @Injectable()
 export class RenderStep {
-  private readonly sampleFps: number;
-  private readonly captionPreset: string;
-  private readonly karaoke: boolean;
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly ffmpeg: FfmpegService,
     private readonly llm: LlmService,
     private readonly tracker: StepTracker,
-    config: ConfigService<AppConfig, true>,
-  ) {
-    this.sampleFps = config.get('pipeline', { infer: true }).sampleFps;
-    const caption = config.get('caption', { infer: true });
-    this.captionPreset = caption.preset;
-    this.karaoke = caption.karaoke;
-  }
+    private readonly settings: SettingsService,
+  ) {}
 
   async run(videoId: string, reelId: string, onProgress?: (pct: number) => void): Promise<void> {
+    const { sampleFps, captionPreset, karaoke } = await this.settings.effective();
     // Mark the aggregate render step active on the first child.
     await this.prisma.videoProcessingJob.updateMany({
       where: { videoId, step: 'render', state: 'pending' },
@@ -67,20 +59,21 @@ export class RenderStep {
     const srcW = video.width ?? 1920;
     const srcH = video.height ?? 1080;
     const reelDur = reel.endSec - reel.startSec;
+    const target = aspectDims(reel.aspectRatio);
     // Captions edited by the admin are stored on the reel (0-based); prefer them.
     const useEditedTranscript = reel.needsRerender && !!reelTxRow;
 
     const input = await pickRendition(this.prisma, this.storage, videoId, video.storedPath, ['1080p', '720p', '480p']);
 
-    // 9:16 video: face-tracked crop when a speaker is present, else blurred fill.
+    // Target-aspect video: face-tracked crop when a speaker is present, else blurred fill.
     const hasFace = windowHasFace(faces, reel.startSec, reel.endSec, FACE_CONFIDENCE);
     let filter = hasFace
-      ? buildCropFilter(faces, reel.startSec, reel.endSec, srcW, srcH)
-      : buildBlurFillFilter();
+      ? buildCropFilter(faces, reel.startSec, reel.endSec, srcW, srcH, target)
+      : buildBlurFillFilter(target);
     // Word-level karaoke captions when word timings exist, else plain (edited captions win).
     const ass = useEditedTranscript
-      ? buildCaptions(reelTxRow!.segments as unknown as TranscriptSegment[], 0, reelDur, this.captionPreset, this.karaoke)
-      : buildCaptions(segments, reel.startSec, reel.endSec, this.captionPreset, this.karaoke);
+      ? buildCaptions(reelTxRow!.segments as unknown as TranscriptSegment[], 0, reelDur, captionPreset, karaoke, target)
+      : buildCaptions(segments, reel.startSec, reel.endSec, captionPreset, karaoke, target);
     if (ass) {
       const assPath = path.join(this.storage.reelsDir(videoId), `${reelId}.ass`);
       await this.storage.ensureDir(path.dirname(assPath));
@@ -126,7 +119,7 @@ export class RenderStep {
       faces,
       scenes,
       energy,
-      sampleFps: this.sampleFps,
+      sampleFps,
       faceConfidence: FACE_CONFIDENCE,
       hookLlm,
       emotionLlm,

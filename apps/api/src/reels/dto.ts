@@ -27,6 +27,11 @@ export class RegenerateReelDto {
   @IsOptional()
   @IsIn([15, 30, 45, 60])
   durationBucket?: number;
+
+  @ApiPropertyOptional({ enum: ['9:16', '1:1', '4:5'], description: 'Target aspect ratio' })
+  @IsOptional()
+  @IsIn(['9:16', '1:1', '4:5'])
+  aspectRatio?: string;
 }
 
 export class SelectThumbnailDto {

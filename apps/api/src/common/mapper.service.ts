@@ -56,6 +56,7 @@ export class MapperService {
       tags: r.tags.map((t) => t.tag),
       fileUrl: r.filePath ? this.storage.publicUrl(r.filePath) : null,
       needsRerender: r.needsRerender,
+      aspectRatio: r.aspectRatio,
       score: r.score
         ? {
             hook: r.score.hook,

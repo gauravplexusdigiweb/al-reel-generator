@@ -80,16 +80,21 @@ export class ReelsService {
     return this.get(id);
   }
 
-  /** Re-render the reel (optionally at a different duration bucket). */
+  /** Re-render the reel (optionally at a different duration bucket / aspect ratio). */
   async regenerate(id: string, dto: RegenerateReelDto): Promise<ReelDto> {
     const reel = await this.load(id);
-    let data: { status: 'candidate'; filePath: null; endSec?: number; durationBucket?: number } = {
-      status: 'candidate',
-      filePath: null,
-    };
+    const data: {
+      status: 'candidate';
+      filePath: null;
+      endSec?: number;
+      durationBucket?: number;
+      aspectRatio?: string;
+    } = { status: 'candidate', filePath: null };
     if (dto.durationBucket) {
-      data = { ...data, durationBucket: dto.durationBucket, endSec: reel.startSec + dto.durationBucket };
+      data.durationBucket = dto.durationBucket;
+      data.endSec = reel.startSec + dto.durationBucket;
     }
+    if (dto.aspectRatio) data.aspectRatio = dto.aspectRatio;
     await this.prisma.reel.update({ where: { id }, data });
     await this.recordReview(id, 'regenerate');
     await this.dispatcher.enqueueSingleRender(reel.videoId, id);

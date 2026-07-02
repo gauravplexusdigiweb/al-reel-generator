@@ -40,6 +40,25 @@ export interface UpdateReelBody {
   transcript?: { start: number; end: number; text: string }[];
 }
 
+export interface CreateReelBody {
+  startSec: number;
+  endSec: number;
+  durationBucket?: number;
+  aspectRatio?: string;
+}
+
+export interface EffectiveSettings {
+  candidateMin: number;
+  candidateMax: number;
+  durationBuckets: number[];
+  sampleFps: number;
+  retainIntermediates: boolean;
+  captionPreset: string;
+  karaoke: boolean;
+}
+
+export const ASPECT_RATIOS = ['9:16', '1:1', '4:5'];
+
 export const api = {
   listVideos: () => req<VideoDto[]>('/videos'),
   getVideo: (id: string) => req<VideoDto>(`/videos/${id}`),
@@ -53,6 +72,14 @@ export const api = {
   updateReel: (id: string, body: UpdateReelBody) =>
     req<ReelDto>(`/reels/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteReel: (id: string) => req<void>(`/reels/${id}`, { method: 'DELETE' }),
+  createReel: (videoId: string, body: CreateReelBody) =>
+    req<ReelDto>(`/videos/${videoId}/reels`, { method: 'POST', body: JSON.stringify(body) }),
+  exportZipUrl: (videoId: string, status?: string) =>
+    `${API_BASE}/videos/${videoId}/reels/export.zip${status ? `?status=${status}` : ''}`,
+
+  getSettings: () => req<EffectiveSettings>('/settings'),
+  updateSettings: (body: Partial<EffectiveSettings>) =>
+    req<EffectiveSettings>('/settings', { method: 'PUT', body: JSON.stringify(body) }),
 
   approve: (id: string) => req<ReelDto>(`/reels/${id}/approve`, { method: 'POST', body: '{}' }),
   reject: (id: string) => req<ReelDto>(`/reels/${id}/reject`, { method: 'POST', body: '{}' }),

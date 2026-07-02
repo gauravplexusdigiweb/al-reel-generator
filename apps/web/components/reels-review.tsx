@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReelDto } from '@arg/shared';
 import { toast } from 'sonner';
-import { Download, Check, X, RefreshCw, Scissors, Star, Trash2, Save } from 'lucide-react';
-import { api, mediaUrl } from '@/lib/api';
+import { Download, Check, X, RefreshCw, Scissors, Star, Trash2, Save, Plus, Archive } from 'lucide-react';
+import { api, mediaUrl, ASPECT_RATIOS } from '@/lib/api';
 import { formatDuration, scorePct, scoreTone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
@@ -58,20 +58,66 @@ export function ReelsReview({ videoId, durationSec }: { videoId: string; duratio
 
   const selected = useMemo(() => reels.find((r) => r.id === selectedId) ?? null, [reels, selectedId]);
 
-  if (loading && reels.length === 0) {
-    return <p className="text-sm text-muted-foreground">Loading reels…</p>;
-  }
-  if (reels.length === 0) {
-    return <p className="text-sm text-muted-foreground">No candidate reels yet.</p>;
-  }
+  const [filter, setFilter] = useState<'all' | ReelDto['status']>('all');
+  const [sort, setSort] = useState<'score' | 'newest' | 'duration'>('score');
+  const [newClipOpen, setNewClipOpen] = useState(false);
+
+  const visible = useMemo(() => {
+    const list = filter === 'all' ? reels : reels.filter((r) => r.status === filter);
+    const cmp = {
+      score: (a: ReelDto, b: ReelDto) => (b.score?.overall ?? 0) - (a.score?.overall ?? 0),
+      newest: (a: ReelDto, b: ReelDto) => +new Date(b.createdAt) - +new Date(a.createdAt),
+      duration: (a: ReelDto, b: ReelDto) => b.endSec - b.startSec - (a.endSec - a.startSec),
+    }[sort];
+    return [...list].sort(cmp);
+  }, [reels, filter, sort]);
 
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {reels.map((reel) => (
-          <ReelCard key={reel.id} reel={reel} onOpen={() => setSelectedId(reel.id)} />
-        ))}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value as typeof filter)}
+          className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+        >
+          <option value="all">All statuses</option>
+          <option value="candidate">Candidate</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="published">Published</option>
+        </select>
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as typeof sort)}
+          className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+        >
+          <option value="score">Sort: score</option>
+          <option value="newest">Sort: newest</option>
+          <option value="duration">Sort: duration</option>
+        </select>
+        <div className="ml-auto flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => setNewClipOpen(true)}>
+            <Plus className="mr-1 h-3 w-3" /> New clip
+          </Button>
+          <Button size="sm" variant="outline" asChild>
+            <a href={api.exportZipUrl(videoId, 'approved')}>
+              <Archive className="mr-1 h-3 w-3" /> Export approved
+            </a>
+          </Button>
+        </div>
       </div>
+
+      {loading && reels.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Loading reels…</p>
+      ) : visible.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No reels match this filter.</p>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {visible.map((reel) => (
+            <ReelCard key={reel.id} reel={reel} onOpen={() => setSelectedId(reel.id)} />
+          ))}
+        </div>
+      )}
 
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelectedId(null)}>
         <DialogContent>
@@ -85,7 +131,91 @@ export function ReelsReview({ videoId, durationSec }: { videoId: string; duratio
           )}
         </DialogContent>
       </Dialog>
+
+      <NewClipDialog
+        videoId={videoId}
+        durationSec={durationSec}
+        open={newClipOpen}
+        onOpenChange={setNewClipOpen}
+        onCreated={(r) => setReels((prev) => [r, ...prev])}
+      />
     </>
+  );
+}
+
+function NewClipDialog({
+  videoId,
+  durationSec,
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  videoId: string;
+  durationSec: number;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onCreated: (r: ReelDto) => void;
+}) {
+  const [range, setRange] = useState<[number, number]>([0, Math.min(30, durationSec || 30)]);
+  const [aspect, setAspect] = useState('9:16');
+  const [busy, setBusy] = useState(false);
+
+  async function create() {
+    setBusy(true);
+    try {
+      const reel = await api.createReel(videoId, { startSec: range[0], endSec: range[1], aspectRatio: aspect });
+      toast.success('Clip created — rendering');
+      onCreated(reel);
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to create clip');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>New manual clip</DialogTitle>
+          <DialogDescription>Pick a time window and aspect ratio to render a reel.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Window</span>
+            <span className="tabular-nums">
+              {range[0].toFixed(1)}s → {range[1].toFixed(1)}s ({(range[1] - range[0]).toFixed(1)}s)
+            </span>
+          </div>
+          <Slider
+            min={0}
+            max={Math.max(1, durationSec)}
+            step={0.5}
+            value={range}
+            onValueChange={(v) => setRange([v[0], v[1]] as [number, number])}
+            minStepsBetweenThumbs={2}
+          />
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Aspect</span>
+            <select
+              value={aspect}
+              onChange={(e) => setAspect(e.target.value)}
+              className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+            >
+              {ASPECT_RATIOS.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button onClick={create} disabled={busy || range[1] <= range[0]}>
+            <Plus className="mr-1 h-4 w-4" /> Create clip
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -309,6 +439,21 @@ function ReelReviewPanel({
             <Button size="sm" variant="secondary" disabled={busy} onClick={() => run(() => api.regenerate(reel.id, {}), 'Regenerating')}>
               <RefreshCw className="mr-1 h-3 w-3" /> Regenerate
             </Button>
+            <select
+              value={reel.aspectRatio}
+              disabled={busy}
+              title="Change aspect ratio (re-renders)"
+              onChange={(e) =>
+                run(() => api.regenerate(reel.id, { aspectRatio: e.target.value }), `Re-rendering at ${e.target.value}`)
+              }
+              className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+            >
+              {ASPECT_RATIOS.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
             <Button size="sm" variant="secondary" disabled={busy} onClick={() => run(() => api.publish(reel.id), 'Published & exported locally')}>
               Publish
             </Button>
