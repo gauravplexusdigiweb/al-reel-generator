@@ -8,8 +8,8 @@ reel-worthy moments, then renders 10–20 vertical candidate clips (each with bu
 export. Built for **personal, local use** — everything runs on your machine, nothing is deployed
 or published to third parties.
 
-> Status: **Phase 1 (core generation pipeline) — complete.** Analytics, AI learning engine,
-> founder dashboard, and prediction engine are the deferred Phase 2 roadmap.
+> Status: **Phase 1 core pipeline + Phase 1.5 enhancements — complete.** Analytics, AI learning
+> engine, founder dashboard, and prediction engine are the deferred Phase 2 roadmap.
 
 ---
 
@@ -17,18 +17,24 @@ or published to third parties.
 
 - **Upload** long videos (MP4 / MOV / MKV / AVI) with configurable size limits.
 - **Multi-rendition transcode** (1080p / 720p / 480p) + audio & frame extraction (FFmpeg).
-- **Speech-to-text** with Whisper → timestamped transcript (English/Hindi and more).
+- **Speech-to-text** with Whisper → timestamped, **word-level** transcript (English/Hindi and more).
 - **Scene detection** (PySceneDetect) and **face detection** (MediaPipe).
 - **Highlight detection** — combines transcript, scenes, audio energy, and an LLM ranking to pick
-  the best 10–20 windows at 15/30/45/60s.
-- **Auto 9:16 crop** centered on the dominant speaker, with smoothed "camera movement".
-- **Burned captions** generated from the transcript.
-- **3 thumbnails** per reel; pick the best.
+  the best 10–20 windows at 15/30/45/60s, snapped to sentence boundaries.
+- **Active-speaker 9:16 crop** with smoothed "camera movement"; **blurred-fill** fallback for
+  face-less scenes.
+- **Word-level "karaoke" captions** (falls back to plain), with style presets and safe-zones.
+- **Audio loudness normalization** for consistent volume across reels.
 - **AI scoring engine** — hook, emotion, speech, motion, face visibility, scene quality, replay
   prediction, and an overall score used to rank candidates.
 - **AI titles & tags** per reel (local LLM via Ollama).
-- **Admin review** — approve / reject / trim (re-render) / regenerate / select thumbnail /
-  publish (export locally) / download.
+- **Admin review** — approve / reject / **edit title/tags/captions** / trim / regenerate /
+  select thumbnail / publish (export locally) / download / **delete**; filter & sort the grid.
+- **Manual clips** — cut your own window at 9:16 / 1:1 / 4:5; **batch zip export** of approved reels.
+- **Live settings** — tune candidate count, durations, sample rate, captions from `/settings`
+  (no restart); automatic disk cleanup of intermediates.
+- **Retry** a failed video from its last incomplete step; **health indicator** shows when the
+  pipeline is running in fallback mode.
 - **Fault tolerant** — every AI step has a heuristic fallback, so the pipeline completes even if
   the ML service or LLM is down.
 
@@ -136,6 +142,15 @@ Then open:
 - **Web UI:** http://localhost:3000
 - **API + Swagger:** http://localhost:4000/docs
 - **Media files:** http://localhost:4000/files/...
+
+Or run the whole stack in containers:
+
+```bash
+docker compose --profile full up --build
+docker compose exec ollama ollama pull qwen2.5:7b
+```
+
+Run the tests with `pnpm --filter @arg/api test`.
 
 > **Prerequisites:** Node 22+, pnpm 10+, Python 3.10+, Docker. FFmpeg is bundled (no install).
 
