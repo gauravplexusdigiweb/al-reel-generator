@@ -125,6 +125,7 @@ export class FfmpegService {
         '-i', input,
         '-t', dur.toFixed(3),
         '-vf', filter,
+        '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
         '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
         '-c:a', 'aac', '-b:a', '128k',
         '-movflags', '+faststart',

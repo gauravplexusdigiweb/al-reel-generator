@@ -8,11 +8,62 @@ const EMA_ALPHA = 0.35;
 const even = (n: number): number => Math.max(2, Math.floor(n / 2) * 2);
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 
-/** Largest-area face box in a sample = the dominant speaker heuristic. */
-function dominantCenter(sample: FaceSample): { cx: number; cy: number } | null {
+interface Center {
+  cx: number;
+  cy: number;
+}
+
+/**
+ * Pick the on-screen speaker for a frame: weighted by face size, centrality, and
+ * temporal continuity with the previously tracked face (so the crop doesn't jump
+ * between people). Approximates active-speaker tracking without audio-visual sync.
+ */
+function pickSpeakerFace(sample: FaceSample, prev: Center | null): Center | null {
   if (!sample.boxes.length) return null;
-  const b = sample.boxes.reduce((a, c) => (c.w * c.h > a.w * a.h ? c : a));
-  return { cx: b.x + b.w / 2, cy: b.y + b.h / 2 }; // normalized 0..1
+  const maxArea = Math.max(...sample.boxes.map((b) => b.w * b.h)) || 1;
+  let best: Center | null = null;
+  let bestScore = -Infinity;
+  for (const b of sample.boxes) {
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    const area = (b.w * b.h) / maxArea;
+    const centrality = 1 - Math.min(1, Math.hypot(cx - 0.5, cy - 0.5) / 0.7);
+    const continuity = prev ? 1 - Math.min(1, Math.hypot(cx - prev.cx, cy - prev.cy)) : centrality;
+    const score = 0.5 * area + 0.2 * centrality + 0.3 * continuity;
+    if (score > bestScore) {
+      bestScore = score;
+      best = { cx, cy };
+    }
+  }
+  return best;
+}
+
+/** True when the window has at least one confidently-detected face. */
+export function windowHasFace(
+  faces: FaceSample[],
+  startSec: number,
+  endSec: number,
+  minConfidence = 0.5,
+  minFraction = 0.15,
+): boolean {
+  const inWin = faces.filter((s) => s.t >= startSec && s.t < endSec);
+  if (!inWin.length) return false;
+  const withFace = inWin.filter((s) => s.boxes.some((b) => b.score >= minConfidence)).length;
+  return withFace / inWin.length >= minFraction;
+}
+
+/**
+ * 9:16 fill for face-less scenes: the whole frame fits inside a blurred, zoomed
+ * copy of itself — far more polished than a hard center-crop.
+ */
+export function buildBlurFillFilter(): string {
+  return (
+    `split=2[bg][fg];` +
+    `[bg]scale=${TARGET_W}:${TARGET_H}:force_original_aspect_ratio=increase,` +
+    `crop=${TARGET_W}:${TARGET_H},gblur=sigma=24[bgb];` +
+    `[fg]scale=${TARGET_W}:${TARGET_H}:force_original_aspect_ratio=decrease[fgs];` +
+    `[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1`
+  );
 }
 
 /**
@@ -41,12 +92,18 @@ export function buildCropFilter(
 
   const scaleTail = `scale=${TARGET_W}:${TARGET_H}:force_original_aspect_ratio=increase,crop=${TARGET_W}:${TARGET_H},setsar=1`;
 
-  // Collect in-window samples with a detected face.
-  const pts = faces
+  // Collect in-window samples, tracking the speaker across frames.
+  const inWindow = faces
     .filter((s) => s.t >= startSec - 0.5 && s.t <= endSec + 0.5)
-    .map((s) => ({ t: s.t - startSec, c: dominantCenter(s) }))
-    .filter((p): p is { t: number; c: { cx: number; cy: number } } => p.c !== null)
     .sort((a, b) => a.t - b.t);
+  const pts: Array<{ t: number; c: Center }> = [];
+  let prevCenter: Center | null = null;
+  for (const s of inWindow) {
+    const c = pickSpeakerFace(s, prevCenter);
+    if (!c) continue;
+    prevCenter = c;
+    pts.push({ t: s.t - startSec, c });
+  }
 
   if (pts.length === 0) {
     const x = Math.round(maxX / 2);

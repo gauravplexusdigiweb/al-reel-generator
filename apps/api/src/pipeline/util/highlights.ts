@@ -78,13 +78,33 @@ export function generateCandidateWindows(params: {
   scenes.forEach((s) => add(s.startSec));
   for (let t = 0; t < durationSec; t += 5) add(t);
 
+  // Sentence boundaries (segment start/end) used to avoid cutting mid-sentence.
+  const boundaries = [
+    ...new Set(segments.flatMap((s) => [s.start, s.end]).map((x) => Math.round(x * 10) / 10)),
+  ].sort((x, y) => x - y);
+  const TOL = 2;
+  const snap = (t: number): number => {
+    let best = t;
+    let bestD = TOL;
+    for (const b of boundaries) {
+      const d = Math.abs(b - t);
+      if (d < bestD) {
+        bestD = d;
+        best = b;
+      }
+    }
+    return best;
+  };
+
   const sorted = [...anchors].sort((a, b) => a - b);
   const windows: CandidateWindow[] = [];
   for (const a of sorted) {
     for (const b of buckets) {
-      const end = a + b;
+      const start = Math.max(0, snap(a));
+      let end = snap(a + b);
+      if (end - start < Math.min(3, b)) end = a + b; // keep a sensible length
       if (end <= durationSec + 0.25) {
-        windows.push({ startSec: a, endSec: Math.min(end, durationSec), durationBucket: b });
+        windows.push({ startSec: start, endSec: Math.min(end, durationSec), durationBucket: b });
       }
     }
   }

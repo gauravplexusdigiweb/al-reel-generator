@@ -22,6 +22,7 @@ export interface AppConfig {
     ollamaBaseUrl: string;
     ollamaModel: string;
   };
+  caption: { preset: string; karaoke: boolean };
   ffmpeg: { ffmpegPath?: string; ffprobePath?: string };
 }
 
@@ -64,6 +65,10 @@ export default (): AppConfig => ({
     provider: process.env.LLM_PROVIDER || 'ollama',
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
     ollamaModel: process.env.OLLAMA_MODEL || 'llama3.1',
+  },
+  caption: {
+    preset: process.env.CAPTION_PRESET || 'default',
+    karaoke: (process.env.CAPTION_KARAOKE || 'true').toLowerCase() !== 'false',
   },
   ffmpeg: {
     ffmpegPath: process.env.FFMPEG_PATH || undefined,

@@ -39,10 +39,17 @@ export type ReviewAction =
   | 'regenerate'
   | 'publish';
 
+export interface TranscriptWord {
+  start: number; // seconds
+  end: number; // seconds
+  text: string;
+}
+
 export interface TranscriptSegment {
   start: number; // seconds
   end: number; // seconds
   text: string;
+  words?: TranscriptWord[]; // present when word-level timestamps are available
 }
 
 export interface SceneDto {

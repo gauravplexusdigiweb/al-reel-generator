@@ -69,12 +69,26 @@ def transcribe(req: TranscribeReq) -> dict:
     if not os.path.exists(req.path):
         raise HTTPException(status_code=400, detail=f"audio not found: {req.path}")
     model = get_whisper(req.model)
-    segments, info = model.transcribe(req.path, vad_filter=True, beam_size=1)
-    out: List[dict] = [
-        {"start": float(s.start), "end": float(s.end), "text": s.text.strip()}
-        for s in segments
-        if s.text and s.text.strip()
-    ]
+    segments, info = model.transcribe(
+        req.path, vad_filter=True, beam_size=1, word_timestamps=True
+    )
+    out: List[dict] = []
+    for s in segments:
+        if not s.text or not s.text.strip():
+            continue
+        words = [
+            {"start": float(w.start), "end": float(w.end), "text": w.word.strip()}
+            for w in (s.words or [])
+            if w.word and w.word.strip()
+        ]
+        out.append(
+            {
+                "start": float(s.start),
+                "end": float(s.end),
+                "text": s.text.strip(),
+                "words": words,
+            }
+        )
     return {"language": getattr(info, "language", None), "segments": out}
 
 

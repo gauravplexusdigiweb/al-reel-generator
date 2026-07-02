@@ -11,8 +11,8 @@ import { FfmpegService } from '../../media/ffmpeg.service';
 import { LlmService } from '../../llm/llm.service';
 import { StepTracker } from '../step-tracker.service';
 import { pickRendition } from '../util/inputs';
-import { buildCropFilter } from '../util/crop';
-import { buildAssSubtitle } from '../util/captions';
+import { buildCropFilter, buildBlurFillFilter, windowHasFace } from '../util/crop';
+import { buildCaptions } from '../util/captions';
 import { segmentsInWindow, windowText } from '../util/highlights';
 import { computeScores } from '../util/scoring';
 
@@ -26,6 +26,8 @@ function escapeSubtitlePath(p: string): string {
 @Injectable()
 export class RenderStep {
   private readonly sampleFps: number;
+  private readonly captionPreset: string;
+  private readonly karaoke: boolean;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -36,6 +38,9 @@ export class RenderStep {
     config: ConfigService<AppConfig, true>,
   ) {
     this.sampleFps = config.get('pipeline', { infer: true }).sampleFps;
+    const caption = config.get('caption', { infer: true });
+    this.captionPreset = caption.preset;
+    this.karaoke = caption.karaoke;
   }
 
   async run(videoId: string, reelId: string, onProgress?: (pct: number) => void): Promise<void> {
@@ -45,13 +50,14 @@ export class RenderStep {
       data: { state: 'active', startedAt: new Date() },
     });
 
-    const [reel, video, facesRow, transcript, audio, sceneRows] = await Promise.all([
+    const [reel, video, facesRow, transcript, audio, sceneRows, reelTxRow] = await Promise.all([
       this.prisma.reel.findUniqueOrThrow({ where: { id: reelId } }),
       this.prisma.video.findUniqueOrThrow({ where: { id: videoId } }),
       this.prisma.videoFace.findUnique({ where: { videoId } }),
       this.prisma.videoTranscript.findUnique({ where: { videoId } }),
       this.prisma.videoAudio.findUnique({ where: { videoId } }),
       this.prisma.videoScene.findMany({ where: { videoId } }),
+      this.prisma.reelTranscript.findUnique({ where: { reelId } }),
     ]);
 
     const faces = (facesRow?.samples as unknown as FaceSample[]) ?? [];
@@ -60,12 +66,21 @@ export class RenderStep {
     const scenes: SceneDto[] = sceneRows.map((s) => ({ startSec: s.startSec, endSec: s.endSec, motion: s.motion }));
     const srcW = video.width ?? 1920;
     const srcH = video.height ?? 1080;
+    const reelDur = reel.endSec - reel.startSec;
+    // Captions edited by the admin are stored on the reel (0-based); prefer them.
+    const useEditedTranscript = reel.needsRerender && !!reelTxRow;
 
     const input = await pickRendition(this.prisma, this.storage, videoId, video.storedPath, ['1080p', '720p', '480p']);
 
-    // 9:16 face-tracked crop, then burned captions.
-    let filter = buildCropFilter(faces, reel.startSec, reel.endSec, srcW, srcH);
-    const ass = buildAssSubtitle(segments, reel.startSec, reel.endSec);
+    // 9:16 video: face-tracked crop when a speaker is present, else blurred fill.
+    const hasFace = windowHasFace(faces, reel.startSec, reel.endSec, FACE_CONFIDENCE);
+    let filter = hasFace
+      ? buildCropFilter(faces, reel.startSec, reel.endSec, srcW, srcH)
+      : buildBlurFillFilter();
+    // Word-level karaoke captions when word timings exist, else plain (edited captions win).
+    const ass = useEditedTranscript
+      ? buildCaptions(reelTxRow!.segments as unknown as TranscriptSegment[], 0, reelDur, this.captionPreset, this.karaoke)
+      : buildCaptions(segments, reel.startSec, reel.endSec, this.captionPreset, this.karaoke);
     if (ass) {
       const assPath = path.join(this.storage.reelsDir(videoId), `${reelId}.ass`);
       await this.storage.ensureDir(path.dirname(assPath));
@@ -84,7 +99,6 @@ export class RenderStep {
     });
 
     // 3 thumbnails from the rendered 9:16 reel.
-    const reelDur = reel.endSec - reel.startSec;
     const thumbsDir = this.storage.thumbnailsDir(videoId);
     const thumbRelPaths: string[] = [];
     for (let i = 0; i < 3; i++) {
@@ -105,7 +119,6 @@ export class RenderStep {
       this.llm.scoreHook(openingText || fullText),
       this.llm.scoreEmotion(fullText),
     ]);
-    void segmentsInWindow; // (helper available for future word-level captions)
     const scores = computeScores({
       startSec: reel.startSec,
       endSec: reel.endSec,
@@ -125,30 +138,46 @@ export class RenderStep {
       update: { ...scoreFields, rationale: (rationale ?? {}) as Prisma.InputJsonValue },
     });
 
-    // Reel-scoped transcript, title + tags.
-    const reelSegs = segmentsInWindow(segments, reel.startSec, reel.endSec).map((s) => ({
-      start: Math.max(0, s.start - reel.startSec),
-      end: Math.max(0, s.end - reel.startSec),
-      text: s.text,
-    }));
-    await this.prisma.reelTranscript.upsert({
-      where: { reelId },
-      create: { reelId, segments: reelSegs as unknown as Prisma.InputJsonValue },
-      update: { segments: reelSegs as unknown as Prisma.InputJsonValue },
-    });
-
-    const { title, tags } = await this.llm.generateTitleAndTags(fullText || 'reel');
-    await this.prisma.reelTag.deleteMany({ where: { reelId } });
-    if (tags.length) {
-      await this.prisma.reelTag.createMany({
-        data: tags.map((t) => ({ reelId, tag: t })),
-        skipDuplicates: true,
+    // Reel-scoped transcript — refresh from the source window unless the admin
+    // edited the captions (then keep their version).
+    if (!useEditedTranscript) {
+      const reelSegs = segmentsInWindow(segments, reel.startSec, reel.endSec).map((s) => ({
+        start: Math.max(0, s.start - reel.startSec),
+        end: Math.max(0, s.end - reel.startSec),
+        text: s.text,
+        words: s.words?.map((w) => ({
+          start: Math.max(0, w.start - reel.startSec),
+          end: Math.max(0, w.end - reel.startSec),
+          text: w.text,
+        })),
+      }));
+      await this.prisma.reelTranscript.upsert({
+        where: { reelId },
+        create: { reelId, segments: reelSegs as unknown as Prisma.InputJsonValue },
+        update: { segments: reelSegs as unknown as Prisma.InputJsonValue },
       });
     }
-    await this.prisma.reel.update({
-      where: { id: reelId },
-      data: { filePath: this.storage.rel(out), suggestedTitle: title },
-    });
+
+    // Title + tags: generate once (first render); preserve admin edits afterwards.
+    const existingTags = await this.prisma.reelTag.count({ where: { reelId } });
+    if (!reel.suggestedTitle && existingTags === 0) {
+      const { title, tags } = await this.llm.generateTitleAndTags(fullText || 'reel');
+      if (tags.length) {
+        await this.prisma.reelTag.createMany({
+          data: tags.map((t) => ({ reelId, tag: t })),
+          skipDuplicates: true,
+        });
+      }
+      await this.prisma.reel.update({
+        where: { id: reelId },
+        data: { filePath: this.storage.rel(out), suggestedTitle: title, needsRerender: false },
+      });
+    } else {
+      await this.prisma.reel.update({
+        where: { id: reelId },
+        data: { filePath: this.storage.rel(out), needsRerender: false },
+      });
+    }
 
     // Aggregate render progress.
     const [total, done] = await Promise.all([
