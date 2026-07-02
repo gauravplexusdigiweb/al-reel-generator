@@ -1,0 +1,51 @@
+# Local infra for AI Reel Generator (personal use).
+# App services (api, worker, web, ai-service) run on the host via pnpm/python;
+# this file provides the backing infra only.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: arg
+      POSTGRES_PASSWORD: arg
+      POSTGRES_DB: arg
+    ports:
+      # Override POSTGRES_PORT in .env if 5432 is already taken on your host.
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arg"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollamadata:/root/.ollama
+    # After first `docker compose up`, pull a model once:
+    #   docker compose exec ollama ollama pull llama3.1
+    # (or qwen2.5). GPU users can add a `deploy.resources.reservations.devices` block.
+
+volumes:
+  pgdata:
+  redisdata:
+  ollamadata:

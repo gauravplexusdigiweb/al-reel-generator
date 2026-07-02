@@ -1,0 +1,36 @@
+{
+  "name": "al-reel-generator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI Reel Generator — turn long-form videos into scored, captioned 9:16 reels (local, personal use).",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter \"./apps/*\" --filter \"./packages/*\" build",
+    "dev": "concurrently -n api,worker,web -c blue,magenta,green \"pnpm --filter @arg/api start:dev\" \"pnpm --filter @arg/api start:worker:dev\" \"pnpm --filter @arg/web dev\"",
+    "dev:api": "pnpm --filter @arg/api start:dev",
+    "dev:worker": "pnpm --filter @arg/api start:worker:dev",
+    "dev:web": "pnpm --filter @arg/web dev",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "prisma:migrate": "pnpm --filter @arg/api prisma:migrate",
+    "prisma:generate": "pnpm --filter @arg/api prisma:generate",
+    "infra:up": "docker compose up -d postgres redis ollama",
+    "infra:down": "docker compose down"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "ffmpeg-static",
+      "prisma",
+      "@prisma/client",
+      "@prisma/engines",
+      "@nestjs/core",
+      "msgpackr-extract"
+    ]
+  }
+}

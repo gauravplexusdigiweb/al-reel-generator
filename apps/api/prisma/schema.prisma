@@ -1,0 +1,238 @@
+// AI Reel Generator — Phase 1 core schema.
+// Analytics / learning / prediction tables are deferred to Phase 2 (see plan).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum VideoStatus {
+  uploaded
+  validating
+  processing
+  ready
+  failed
+}
+
+enum PipelineStep {
+  validate
+  transcode
+  transcribe
+  scenes
+  faces
+  highlights
+  render
+}
+
+enum JobState {
+  pending
+  active
+  completed
+  failed
+}
+
+enum ReelStatus {
+  candidate
+  approved
+  rejected
+  published
+}
+
+enum ReviewAction {
+  approve
+  reject
+  trim
+  regenerate
+  publish
+}
+
+model Video {
+  id               String      @id @default(cuid())
+  originalFilename String
+  storedPath       String // path (relative to DATA_DIR) of the original upload
+  status           VideoStatus @default(uploaded)
+  durationSec      Float?
+  width            Int?
+  height           Int?
+  codec            String?
+  sizeBytes        BigInt?
+  language         String?
+  category         String?
+  error            String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  jobs        VideoProcessingJob[]
+  transcript  VideoTranscript?
+  scenes      VideoScene[]
+  faces       VideoFace?
+  audio       VideoAudio?
+  renditions  VideoRendition[]
+  reels       Reel[]
+
+  @@map("videos")
+}
+
+model VideoProcessingJob {
+  id         String       @id @default(cuid())
+  videoId    String
+  step       PipelineStep
+  state      JobState     @default(pending)
+  progress   Int          @default(0)
+  error      String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime     @default(now())
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([videoId, step])
+  @@map("video_processing_jobs")
+}
+
+model VideoRendition {
+  id       String @id @default(cuid())
+  videoId  String
+  label    String // "1080p" | "720p" | "480p"
+  path     String
+  width    Int
+  height   Int
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([videoId, label])
+  @@map("video_renditions")
+}
+
+model VideoTranscript {
+  id       String @id @default(cuid())
+  videoId  String @unique
+  language String?
+  segments Json // TranscriptSegment[]
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@map("video_transcripts")
+}
+
+model VideoScene {
+  id       String @id @default(cuid())
+  videoId  String
+  startSec Float
+  endSec   Float
+  motion   Float  @default(0)
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@map("video_scenes")
+}
+
+model VideoFace {
+  id      String @id @default(cuid())
+  videoId String @unique
+  samples Json // FaceSample[]
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@map("video_faces")
+}
+
+model VideoAudio {
+  id         String @id @default(cuid())
+  videoId    String @unique
+  path       String
+  sampleRate Int
+  energy     Json // number[] loudness envelope (per second)
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@map("video_audio")
+}
+
+model Reel {
+  id             String     @id @default(cuid())
+  videoId        String
+  startSec       Float
+  endSec         Float
+  durationBucket Int // 15 | 30 | 45 | 60
+  status         ReelStatus @default(candidate)
+  filePath       String?
+  suggestedTitle String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  video      Video          @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  score      ReelScore?
+  transcript ReelTranscript?
+  tags       ReelTag[]
+  thumbnails ReelThumbnail[]
+  reviews    AdminReview[]
+
+  @@map("reels")
+}
+
+model ReelScore {
+  id               String @id @default(cuid())
+  reelId           String @unique
+  hook             Float
+  emotion          Float
+  speech           Float
+  motion           Float
+  faceVisibility   Float
+  sceneQuality     Float
+  replayPrediction Float
+  overall          Float
+  rationale        Json?
+
+  reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+
+  @@map("reel_scores")
+}
+
+model ReelTranscript {
+  id       String @id @default(cuid())
+  reelId   String @unique
+  segments Json // TranscriptSegment[] (offset to reel start)
+
+  reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+
+  @@map("reel_transcripts")
+}
+
+model ReelTag {
+  id     String @id @default(cuid())
+  reelId String
+  tag    String
+
+  reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+
+  @@unique([reelId, tag])
+  @@map("reel_tags")
+}
+
+model ReelThumbnail {
+  id       String  @id @default(cuid())
+  reelId   String
+  path     String
+  selected Boolean @default(false)
+
+  reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+
+  @@map("reel_thumbnails")
+}
+
+model AdminReview {
+  id        String       @id @default(cuid())
+  reelId    String
+  action    ReviewAction
+  notes     String?
+  createdAt DateTime     @default(now())
+
+  reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+
+  @@map("admin_reviews")
+}

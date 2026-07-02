@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# builds
+dist/
+build/
+.next/
+*.tsbuildinfo
+
+# env
+.env
+.env.local
+.env.*.local
+
+# local data / media storage (uploads, renditions, reels, thumbnails, frames)
+data/
+
+# python
+services/ai-service/.venv/
+__pycache__/
+*.pyc
+services/ai-service/models/
+
+# logs / os
+*.log
+.DS_Store
