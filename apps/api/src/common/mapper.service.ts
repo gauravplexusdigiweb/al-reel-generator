@@ -55,6 +55,7 @@ export class MapperService {
       suggestedTitle: r.suggestedTitle,
       tags: r.tags.map((t) => t.tag),
       fileUrl: r.filePath ? this.storage.publicUrl(r.filePath) : null,
+      needsRerender: r.needsRerender,
       score: r.score
         ? {
             hook: r.score.hook,

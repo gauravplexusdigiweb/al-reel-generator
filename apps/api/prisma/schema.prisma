@@ -162,6 +162,7 @@ model Reel {
   status         ReelStatus @default(candidate)
   filePath       String?
   suggestedTitle String?
+  needsRerender  Boolean    @default(false)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 

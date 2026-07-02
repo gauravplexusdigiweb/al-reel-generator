@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 import type { VideoStatusDto } from '@arg/shared';
 import { api } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { PipelineStatus } from '@/components/pipeline-status';
 import { ReelsReview } from '@/components/reels-review';
 import { formatDuration } from '@/lib/format';
@@ -34,11 +36,21 @@ export default function VideoDetailPage({ params }: { params: { id: string } }) 
     };
   }, [id]);
 
+  async function handleRetry() {
+    try {
+      setStatus(await api.retryVideo(id));
+      toast.success('Retrying from the failed step');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Retry failed');
+    }
+  }
+
   if (error) return <p className="text-sm text-red-500">{error}</p>;
   if (!status) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
   const { video } = status;
   const isReady = video.status === 'ready';
+  const isFailed = video.status === 'failed';
 
   return (
     <div className="space-y-6">
@@ -55,9 +67,16 @@ export default function VideoDetailPage({ params }: { params: { id: string } }) 
             {video.language ? ` · ${video.language}` : ''}
           </p>
         </div>
-        <Badge variant={isReady ? 'success' : video.status === 'failed' ? 'destructive' : 'warning'}>
-          {video.status}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant={isReady ? 'success' : isFailed ? 'destructive' : 'warning'}>
+            {video.status}
+          </Badge>
+          {isFailed && (
+            <Button size="sm" variant="outline" onClick={handleRetry}>
+              <RefreshCw className="mr-1 h-3 w-3" /> Retry
+            </Button>
+          )}
+        </div>
       </div>
 
       {!isReady && (

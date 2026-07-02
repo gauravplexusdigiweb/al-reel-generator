@@ -79,4 +79,20 @@ export class VideosService {
     });
     return reels.map((r) => this.mapper.toReelDto(r));
   }
+
+  /** Delete a video, all its reels (cascade), and its entire on-disk working dir. */
+  async remove(id: string): Promise<void> {
+    const video = await this.prisma.video.findUnique({ where: { id } });
+    if (!video) throw new NotFoundException('Video not found');
+    await this.prisma.video.delete({ where: { id } });
+    await this.storage.remove(this.storage.videoDir(id));
+  }
+
+  /** Re-run a failed video from its earliest incomplete step. */
+  async retry(id: string): Promise<VideoStatusDto> {
+    const video = await this.prisma.video.findUnique({ where: { id } });
+    if (!video) throw new NotFoundException('Video not found');
+    await this.dispatcher.retry(id);
+    return this.status(id);
+  }
 }

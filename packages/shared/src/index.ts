@@ -91,6 +91,7 @@ export interface ReelDto {
   suggestedTitle: string | null;
   tags: string[];
   fileUrl: string | null;
+  needsRerender: boolean;
   score: ReelScoreDto | null;
   thumbnails: ThumbnailDto[];
   transcript: TranscriptSegment[];

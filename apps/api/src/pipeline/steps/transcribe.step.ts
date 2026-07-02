@@ -1,16 +1,23 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
+import type { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../storage/storage.service';
 import { AiClientService } from '../../ai/ai-client.service';
 
 @Injectable()
 export class TranscribeStep {
+  private readonly retainIntermediates: boolean;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly ai: AiClientService,
-  ) {}
+    config: ConfigService<AppConfig, true>,
+  ) {
+    this.retainIntermediates = config.get('pipeline', { infer: true }).retainIntermediates;
+  }
 
   async run(videoId: string): Promise<void> {
     const audio = await this.prisma.videoAudio.findUnique({ where: { videoId } });
@@ -33,6 +40,11 @@ export class TranscribeStep {
 
     if (result.language) {
       await this.prisma.video.update({ where: { id: videoId }, data: { language: result.language } });
+    }
+
+    // Audio WAV is only needed for transcription (energy is already persisted) — purge it.
+    if (audio && !this.retainIntermediates) {
+      await this.storage.remove(this.storage.abs(audio.path));
     }
   }
 }

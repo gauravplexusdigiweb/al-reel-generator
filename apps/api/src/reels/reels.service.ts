@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import type { ReelDto } from '@arg/shared';
@@ -8,7 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { PipelineDispatcher } from '../queue/pipeline-dispatcher.service';
 import { MapperService } from '../common/mapper.service';
-import { RegenerateReelDto, SelectThumbnailDto, TrimReelDto } from './dto';
+import { RegenerateReelDto, SelectThumbnailDto, TrimReelDto, UpdateReelDto } from './dto';
 
 @Injectable()
 export class ReelsService {
@@ -93,6 +94,59 @@ export class ReelsService {
     await this.recordReview(id, 'regenerate');
     await this.dispatcher.enqueueSingleRender(reel.videoId, id);
     return this.get(id);
+  }
+
+  /** Edit AI-generated title / tags / caption text. Editing captions flags a re-render. */
+  async updateMeta(id: string, dto: UpdateReelDto): Promise<ReelDto> {
+    await this.mustExist(id);
+    const ops: Prisma.PrismaPromise<unknown>[] = [];
+
+    const reelData: { suggestedTitle?: string; needsRerender?: boolean } = {};
+    if (dto.suggestedTitle !== undefined) reelData.suggestedTitle = dto.suggestedTitle.trim();
+    if (dto.transcript) reelData.needsRerender = true;
+    if (Object.keys(reelData).length) {
+      ops.push(this.prisma.reel.update({ where: { id }, data: reelData }));
+    }
+
+    if (dto.tags) {
+      const tags = [...new Set(dto.tags.map((t) => t.trim().toLowerCase()).filter(Boolean))];
+      ops.push(this.prisma.reelTag.deleteMany({ where: { reelId: id } }));
+      if (tags.length) {
+        ops.push(
+          this.prisma.reelTag.createMany({
+            data: tags.map((tag) => ({ reelId: id, tag })),
+            skipDuplicates: true,
+          }),
+        );
+      }
+    }
+
+    if (dto.transcript) {
+      const segments = dto.transcript as unknown as Prisma.InputJsonValue;
+      ops.push(
+        this.prisma.reelTranscript.upsert({
+          where: { reelId: id },
+          create: { reelId: id, segments },
+          update: { segments },
+        }),
+      );
+    }
+
+    if (ops.length) await this.prisma.$transaction(ops);
+    return this.get(id);
+  }
+
+  /** Delete a reel and its files (mp4, captions, thumbnails, published copy). */
+  async remove(id: string): Promise<void> {
+    const reel = await this.prisma.reel.findUnique({ where: { id } });
+    if (!reel) throw new NotFoundException('Reel not found');
+    await this.prisma.reel.delete({ where: { id } }); // cascades score/tags/thumbs/transcript/reviews
+    if (reel.filePath) await this.storage.remove(this.storage.abs(reel.filePath));
+    await this.storage.remove(path.join(this.storage.reelsDir(reel.videoId), `${id}.ass`));
+    for (let i = 1; i <= 3; i++) {
+      await this.storage.remove(path.join(this.storage.thumbnailsDir(reel.videoId), `${id}-${i}.jpg`));
+    }
+    await this.storage.remove(this.storage.abs(path.join('published', `${id}.mp4`)));
   }
 
   async selectThumbnail(id: string, dto: SelectThumbnailDto): Promise<ReelDto> {

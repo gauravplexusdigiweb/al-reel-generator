@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReelDto } from '@arg/shared';
 import { toast } from 'sonner';
-import { Download, Check, X, RefreshCw, Scissors, Star } from 'lucide-react';
+import { Download, Check, X, RefreshCw, Scissors, Star, Trash2, Save } from 'lucide-react';
 import { api, mediaUrl } from '@/lib/api';
 import { formatDuration, scorePct, scoreTone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { ScoreBars } from '@/components/score-bars';
 import {
@@ -50,6 +51,11 @@ export function ReelsReview({ videoId, durationSec }: { videoId: string; duratio
     setReels((prev) => prev.map((x) => (x.id === r.id ? r : x)));
   }, []);
 
+  const removeReel = useCallback((id: string) => {
+    setReels((prev) => prev.filter((x) => x.id !== id));
+    setSelectedId(null);
+  }, []);
+
   const selected = useMemo(() => reels.find((r) => r.id === selectedId) ?? null, [reels, selectedId]);
 
   if (loading && reels.length === 0) {
@@ -70,7 +76,12 @@ export function ReelsReview({ videoId, durationSec }: { videoId: string; duratio
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelectedId(null)}>
         <DialogContent>
           {selected && (
-            <ReelReviewPanel reel={selected} durationSec={durationSec} onChange={patch} />
+            <ReelReviewPanel
+              reel={selected}
+              durationSec={durationSec}
+              onChange={patch}
+              onDeleted={removeReel}
+            />
           )}
         </DialogContent>
       </Dialog>
@@ -115,15 +126,24 @@ function ReelReviewPanel({
   reel,
   durationSec,
   onChange,
+  onDeleted,
 }: {
   reel: ReelDto;
   durationSec: number;
   onChange: (r: ReelDto) => void;
+  onDeleted: (id: string) => void;
 }) {
   const [range, setRange] = useState<[number, number]>([reel.startSec, reel.endSec]);
   const [busy, setBusy] = useState(false);
+  const [title, setTitle] = useState(reel.suggestedTitle ?? '');
+  const [tags, setTags] = useState<string[]>(reel.tags);
+  const [tagInput, setTagInput] = useState('');
 
-  useEffect(() => setRange([reel.startSec, reel.endSec]), [reel.id, reel.startSec, reel.endSec]);
+  useEffect(() => {
+    setRange([reel.startSec, reel.endSec]);
+    setTitle(reel.suggestedTitle ?? '');
+    setTags(reel.tags);
+  }, [reel.id, reel.startSec, reel.endSec, reel.suggestedTitle, reel.tags]);
 
   async function run(action: () => Promise<ReelDto>, msg: string) {
     setBusy(true);
@@ -137,15 +157,43 @@ function ReelReviewPanel({
     }
   }
 
+  function addTag(raw: string) {
+    const t = raw.trim().toLowerCase();
+    if (t && !tags.includes(t)) setTags([...tags, t]);
+    setTagInput('');
+  }
+
+  async function handleDelete() {
+    if (!confirm('Delete this reel?')) return;
+    setBusy(true);
+    try {
+      await api.deleteReel(reel.id);
+      toast.success('Reel deleted');
+      onDeleted(reel.id);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const dirty = title !== (reel.suggestedTitle ?? '') || tags.join(',') !== reel.tags.join(',');
   const fileUrl = mediaUrl(reel.fileUrl);
 
   return (
     <>
       <DialogHeader>
         <DialogTitle>{reel.suggestedTitle ?? 'Untitled reel'}</DialogTitle>
-        <DialogDescription>
-          {formatDuration(reel.endSec - reel.startSec)} · overall score{' '}
-          {scorePct(reel.score?.overall ?? 0)} · {reel.status}
+        <DialogDescription className="flex items-center gap-2">
+          <span>
+            {formatDuration(reel.endSec - reel.startSec)} · overall score{' '}
+            {scorePct(reel.score?.overall ?? 0)} · {reel.status}
+          </span>
+          {reel.needsRerender && (
+            <Badge variant="warning" className="text-[10px]">
+              edited — re-render to apply
+            </Badge>
+          )}
         </DialogDescription>
       </DialogHeader>
 
@@ -181,15 +229,42 @@ function ReelReviewPanel({
         <div className="space-y-4">
           {reel.score && <ScoreBars score={reel.score} />}
 
-          {reel.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {reel.tags.map((t) => (
-                <Badge key={t} variant="outline">
+          {/* Editable title + tags */}
+          <div className="space-y-2">
+            <label className="text-xs text-muted-foreground">Title</label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Reel title" />
+            <div className="flex flex-wrap items-center gap-1">
+              {tags.map((t) => (
+                <Badge key={t} variant="outline" className="gap-1">
                   #{t}
+                  <button onClick={() => setTags(tags.filter((x) => x !== t))} title="Remove tag">
+                    <X className="h-3 w-3" />
+                  </button>
                 </Badge>
               ))}
+              <input
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ',') {
+                    e.preventDefault();
+                    addTag(tagInput);
+                  }
+                }}
+                onBlur={() => tagInput && addTag(tagInput)}
+                placeholder="add tag…"
+                className="w-24 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+              />
             </div>
-          )}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || !dirty}
+              onClick={() => run(() => api.updateReel(reel.id, { suggestedTitle: title, tags }), 'Saved')}
+            >
+              <Save className="mr-1 h-3 w-3" /> Save title & tags
+            </Button>
+          </div>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -244,6 +319,15 @@ function ReelReviewPanel({
                 </a>
               </Button>
             )}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-muted-foreground hover:text-destructive"
+              disabled={busy}
+              onClick={handleDelete}
+            >
+              <Trash2 className="mr-1 h-3 w-3" /> Delete
+            </Button>
           </div>
         </div>
       </div>

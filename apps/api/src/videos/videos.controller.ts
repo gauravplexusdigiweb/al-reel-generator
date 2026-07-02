@@ -1,6 +1,8 @@
 import {
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
   Post,
   UploadedFile,
@@ -45,5 +47,18 @@ export class VideosController {
   @ApiOperation({ summary: 'Get candidate reels for a video (ordered by score)' })
   reels(@Param('id') id: string) {
     return this.videos.reels(id);
+  }
+
+  @Post(':id/retry')
+  @ApiOperation({ summary: 'Retry a failed video from its earliest incomplete step' })
+  retry(@Param('id') id: string) {
+    return this.videos.retry(id);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Delete a video, its reels, and all its files' })
+  remove(@Param('id') id: string) {
+    return this.videos.remove(id);
   }
 }

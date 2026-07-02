@@ -1,5 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsArray,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 
 export class TrimReelDto {
   @ApiProperty({ description: 'New start time (seconds, absolute in source video)' })
@@ -31,4 +40,43 @@ export class ReviewNotesDto {
   @IsOptional()
   @IsString()
   notes?: string;
+}
+
+export class TranscriptSegmentDto {
+  @ApiProperty()
+  @IsNumber()
+  @Min(0)
+  start!: number;
+
+  @ApiProperty()
+  @IsNumber()
+  @Min(0)
+  end!: number;
+
+  @ApiProperty()
+  @IsString()
+  text!: string;
+}
+
+export class UpdateReelDto {
+  @ApiPropertyOptional({ description: 'Edited reel title' })
+  @IsOptional()
+  @IsString()
+  suggestedTitle?: string;
+
+  @ApiPropertyOptional({ type: [String], description: 'Replacement tag list' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+
+  @ApiPropertyOptional({
+    type: [TranscriptSegmentDto],
+    description: 'Edited caption segments (offset to reel start). Triggers a re-render.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TranscriptSegmentDto)
+  transcript?: TranscriptSegmentDto[];
 }

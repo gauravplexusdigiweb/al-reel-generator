@@ -1,8 +1,24 @@
-import { Body, Controller, Get, Param, Post, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Res,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { ReelsService } from './reels.service';
-import { RegenerateReelDto, ReviewNotesDto, SelectThumbnailDto, TrimReelDto } from './dto';
+import {
+  RegenerateReelDto,
+  ReviewNotesDto,
+  SelectThumbnailDto,
+  TrimReelDto,
+  UpdateReelDto,
+} from './dto';
 
 @ApiTags('reels')
 @Controller('reels')
@@ -13,6 +29,19 @@ export class ReelsController {
   @ApiOperation({ summary: 'Get a reel' })
   get(@Param('id') id: string) {
     return this.reels.get(id);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Edit a reel title / tags / caption text' })
+  update(@Param('id') id: string, @Body() body: UpdateReelDto) {
+    return this.reels.updateMeta(id, body);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Delete a reel and its files' })
+  remove(@Param('id') id: string) {
+    return this.reels.remove(id);
   }
 
   @Post(':id/approve')

@@ -34,7 +34,8 @@ export class StepTracker {
       where: { videoId, step },
       data: { state: 'failed', error: error.slice(0, 1000), finishedAt: new Date() },
     });
-    await this.prisma.video.update({
+    // updateMany (not update) so a video deleted mid-processing doesn't throw.
+    await this.prisma.video.updateMany({
       where: { id: videoId },
       data: { status: 'failed', error: error.slice(0, 1000) },
     });

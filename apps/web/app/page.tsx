@@ -27,7 +27,7 @@ export default function HomePage() {
   return (
     <div className="grid gap-8 lg:grid-cols-[380px_1fr]">
       <UploadCard onUploaded={reload} />
-      <VideoList videos={videos} loading={loading} />
+      <VideoList videos={videos} loading={loading} onChanged={reload} />
     </div>
   );
 }

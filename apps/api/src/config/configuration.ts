@@ -11,6 +11,7 @@ export interface AppConfig {
     candidateMax: number;
     durationBuckets: number[];
     sampleFps: number;
+    retainIntermediates: boolean;
   };
   ai: {
     serviceUrl: string;
@@ -53,6 +54,7 @@ export default (): AppConfig => ({
     candidateMax: num(process.env.CANDIDATE_MAX, 20),
     durationBuckets: list(process.env.DURATION_BUCKETS, ['15', '30', '45', '60']).map(Number),
     sampleFps: num(process.env.SAMPLE_FPS, 2),
+    retainIntermediates: (process.env.RETAIN_INTERMEDIATES || 'false').toLowerCase() === 'true',
   },
   ai: {
     serviceUrl: process.env.AI_SERVICE_URL || 'http://localhost:8000',

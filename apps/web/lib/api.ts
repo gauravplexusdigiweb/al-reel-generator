@@ -24,7 +24,20 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await res.json().catch(() => ({}));
     throw new Error((body as { message?: string }).message || `Request failed (${res.status})`);
   }
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+export interface ServicesHealth {
+  aiService: boolean;
+  ollama: boolean;
+  degraded: boolean;
+}
+
+export interface UpdateReelBody {
+  suggestedTitle?: string;
+  tags?: string[];
+  transcript?: { start: number; end: number; text: string }[];
 }
 
 export const api = {
@@ -32,6 +45,14 @@ export const api = {
   getVideo: (id: string) => req<VideoDto>(`/videos/${id}`),
   getStatus: (id: string) => req<VideoStatusDto>(`/videos/${id}/status`),
   getReels: (id: string) => req<ReelDto[]>(`/videos/${id}/reels`),
+  deleteVideo: (id: string) => req<void>(`/videos/${id}`, { method: 'DELETE' }),
+  retryVideo: (id: string) => req<VideoStatusDto>(`/videos/${id}/retry`, { method: 'POST', body: '{}' }),
+
+  servicesHealth: () => req<ServicesHealth>('/health/services'),
+
+  updateReel: (id: string, body: UpdateReelBody) =>
+    req<ReelDto>(`/reels/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteReel: (id: string) => req<void>(`/reels/${id}`, { method: 'DELETE' }),
 
   approve: (id: string) => req<ReelDto>(`/reels/${id}/approve`, { method: 'POST', body: '{}' }),
   reject: (id: string) => req<ReelDto>(`/reels/${id}/reject`, { method: 'POST', body: '{}' }),

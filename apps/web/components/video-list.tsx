@@ -2,10 +2,13 @@
 
 import Link from 'next/link';
 import type { VideoDto, VideoStatus } from '@arg/shared';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { formatBytes, formatDuration } from '@/lib/format';
-import { Film, ChevronRight } from 'lucide-react';
+import { Film, ChevronRight, Trash2 } from 'lucide-react';
+import { api } from '@/lib/api';
 
 const STATUS_VARIANT: Record<VideoStatus, 'secondary' | 'warning' | 'success' | 'destructive'> = {
   uploaded: 'secondary',
@@ -15,7 +18,27 @@ const STATUS_VARIANT: Record<VideoStatus, 'secondary' | 'warning' | 'success' | 
   failed: 'destructive',
 };
 
-export function VideoList({ videos, loading }: { videos: VideoDto[]; loading: boolean }) {
+export function VideoList({
+  videos,
+  loading,
+  onChanged,
+}: {
+  videos: VideoDto[];
+  loading: boolean;
+  onChanged?: () => void;
+}) {
+  async function handleDelete(e: React.MouseEvent, v: VideoDto) {
+    e.preventDefault();
+    if (!confirm(`Delete "${v.originalFilename}" and all its reels?`)) return;
+    try {
+      await api.deleteVideo(v.id);
+      toast.success('Video deleted');
+      onChanged?.();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Delete failed');
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -29,22 +52,32 @@ export function VideoList({ videos, loading }: { videos: VideoDto[]; loading: bo
           <p className="text-sm text-muted-foreground">No videos yet. Upload one to get started.</p>
         )}
         {videos.map((v) => (
-          <Link
+          <div
             key={v.id}
-            href={`/videos/${v.id}`}
             className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-accent"
           >
-            <Film className="h-5 w-5 shrink-0 text-muted-foreground" />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium">{v.originalFilename}</div>
-              <div className="text-xs text-muted-foreground">
-                {formatDuration(v.durationSec)} · {formatBytes(v.sizeBytes)} ·{' '}
-                {new Date(v.createdAt).toLocaleString()}
+            <Link href={`/videos/${v.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+              <Film className="h-5 w-5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">{v.originalFilename}</div>
+                <div className="text-xs text-muted-foreground">
+                  {formatDuration(v.durationSec)} · {formatBytes(v.sizeBytes)} ·{' '}
+                  {new Date(v.createdAt).toLocaleString()}
+                </div>
               </div>
-            </div>
-            <Badge variant={STATUS_VARIANT[v.status]}>{v.status}</Badge>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          </Link>
+              <Badge variant={STATUS_VARIANT[v.status]}>{v.status}</Badge>
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </Link>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="shrink-0 text-muted-foreground hover:text-destructive"
+              onClick={(e) => handleDelete(e, v)}
+              title="Delete video"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
         ))}
       </CardContent>
     </Card>

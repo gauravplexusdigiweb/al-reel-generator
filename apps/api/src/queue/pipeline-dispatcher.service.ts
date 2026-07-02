@@ -75,4 +75,31 @@ export class PipelineDispatcher {
   async enqueueSingleRender(videoId: string, reelId: string): Promise<void> {
     await this.queue.add(JOB.render, { videoId, reelId }, STEP_OPTS);
   }
+
+  /** Retry a failed video from its earliest non-completed step. */
+  async retry(videoId: string): Promise<void> {
+    const jobs = await this.prisma.videoProcessingJob.findMany({ where: { videoId } });
+    const stateByStep = new Map(jobs.map((j) => [j.step, j.state]));
+    const target: PipelineStep =
+      PIPELINE_STEPS.find((s) => stateByStep.get(s) !== 'completed') ?? 'render';
+
+    // Reset the target step and everything after it.
+    const toReset = PIPELINE_STEPS.slice(PIPELINE_STEPS.indexOf(target));
+    await this.prisma.$transaction([
+      ...toReset.map((step) =>
+        this.prisma.videoProcessingJob.upsert({
+          where: { videoId_step: { videoId, step } },
+          create: { videoId, step, state: 'pending', progress: 0 },
+          update: { state: 'pending', progress: 0, error: null, startedAt: null, finishedAt: null },
+        }),
+      ),
+      this.prisma.video.update({
+        where: { id: videoId },
+        data: { status: 'processing', error: null },
+      }),
+    ]);
+
+    // Re-running render alone can't rebuild the fan-out, so restart from highlights.
+    await this.enqueueStep(videoId, target === 'render' ? 'highlights' : target);
+  }
 }
