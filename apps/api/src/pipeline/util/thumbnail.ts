@@ -60,7 +60,6 @@ export function pickThumbnailTimestamps(params: ThumbnailScoreParams): number[] 
 
     // --- face score: nearest face sample ---
     let faceScore = 0;
-    const idx = Math.round(absT * 2); // faces are at sampleFps resolution
     for (let fi = 0; fi < faces.length; fi++) {
       const f = faces[fi];
       if (Math.abs(f.t - absT) < 0.6) {
@@ -106,10 +105,12 @@ export function pickThumbnailTimestamps(params: ThumbnailScoreParams): number[] 
     if (chosen.some((t) => Math.abs(t - c.t) < minSpacingSec)) continue;
     chosen.push(c.t);
   }
-  while (chosen.length < count && ranked.length > chosen.length) {
-    const next = ranked[chosen.length];
-    if (next) chosen.push(next.t);
-    else break;
+  // If spacing left us short, fill with the next highest-scored distinct frames.
+  if (chosen.length < count) {
+    for (const c of ranked) {
+      if (chosen.length >= count) break;
+      if (!chosen.includes(c.t)) chosen.push(c.t);
+    }
   }
   return chosen;
 }

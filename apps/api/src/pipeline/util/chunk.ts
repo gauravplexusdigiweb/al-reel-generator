@@ -35,12 +35,16 @@ export function planChunks(
  * Merge transcript segments from overlapping chunks into a single timeline.
  *
  * Each chunk result carries `chunkStart` (the offset to add) and the raw segments
- * whose timestamps are relative to that chunk's start. After offsetting, segments
- * in the overlap region are deduplicated by fuzzy-matching start/end/text.
+ * whose timestamps are relative to that chunk's start. After offsetting to absolute
+ * time, segments in the overlap regions are de-duplicated by *time overlap* (not text):
+ * when two consecutive segments substantially overlap — as the same speech transcribed
+ * by two adjacent chunks does — the longer/more-complete one is kept. Text-based
+ * de-dup would miss boundary-straddling segments (truncated in one chunk, full in the
+ * next) and leave duplicate captions.
  */
 export function mergeTranscriptSegments(
   chunkResults: Array<{ chunkStart: number; segments: TranscriptSegment[] }>,
-  overlapSec: number,
+  _overlapSec: number,
 ): TranscriptSegment[] {
   // Offset all segments to absolute timestamps.
   const all: TranscriptSegment[] = [];
@@ -59,20 +63,24 @@ export function mergeTranscriptSegments(
     }
   }
 
-  // Sort by start time.
-  all.sort((a, b) => a.start - b.start);
+  // Sort by start time so overlapping duplicates from adjacent chunks are neighbors.
+  all.sort((a, b) => a.start - b.start || a.end - b.end);
 
-  // Deduplicate segments in overlap regions: if two segments have nearly
-  // identical start/end/text, keep only the first (it has more context).
   const deduped: TranscriptSegment[] = [];
   for (const seg of all) {
-    const isDup = deduped.some(
-      (d) =>
-        Math.abs(d.start - seg.start) < 1.5 &&
-        Math.abs(d.end - seg.end) < 1.5 &&
-        d.text.replace(/\s+/g, ' ').trim() === seg.text.replace(/\s+/g, ' ').trim(),
-    );
-    if (!isDup) deduped.push(seg);
+    const last = deduped[deduped.length - 1];
+    if (last) {
+      const inter = Math.min(last.end, seg.end) - Math.max(last.start, seg.start);
+      const minDur = Math.max(0.001, Math.min(last.end - last.start, seg.end - seg.start));
+      if (inter > 0.5 * minDur) {
+        // Same speech from two chunks — keep the longer (more complete) transcription.
+        if (seg.end - seg.start > last.end - last.start) {
+          deduped[deduped.length - 1] = seg;
+        }
+        continue;
+      }
+    }
+    deduped.push(seg);
   }
 
   return deduped;

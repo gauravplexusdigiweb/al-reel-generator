@@ -7,10 +7,27 @@ export class CategoriesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getTree(): Promise<CategoryDto[]> {
-    const categories = await this.prisma.category.findMany({
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-    });
-    return this.buildTree(categories);
+    const [categories, videoGroups, reelGroups] = await Promise.all([
+      this.prisma.category.findMany({ orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] }),
+      this.prisma.video.groupBy({ by: ['categoryId'], _count: { _all: true } }),
+      this.prisma.reel.groupBy({ by: ['categoryId'], _count: { _all: true } }),
+    ]);
+
+    const counts = new Map<string, { videos: number; reels: number }>();
+    for (const c of categories) counts.set(c.id, { videos: 0, reels: 0 });
+    for (const g of videoGroups) {
+      if (g.categoryId) {
+        const e = counts.get(g.categoryId);
+        if (e) e.videos = g._count._all;
+      }
+    }
+    for (const g of reelGroups) {
+      if (g.categoryId) {
+        const e = counts.get(g.categoryId);
+        if (e) e.reels = g._count._all;
+      }
+    }
+    return this.buildTree(categories, counts);
   }
 
   async create(name: string, parentId?: string | null): Promise<CategoryDto> {
@@ -134,8 +151,8 @@ export class CategoriesService {
       sortOrder: number;
       createdAt: Date;
     }>,
+    counts: Map<string, { videos: number; reels: number }>,
   ): CategoryDto[] {
-    const counts = new Map<string, { videos: number; reels: number }>();
     return categories
       .filter((c) => !c.parentId)
       .map((c) => this.buildNode(c, categories, counts));
