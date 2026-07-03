@@ -60,6 +60,12 @@ export class StorageService {
   thumbnailsDir(videoId: string): string {
     return path.join(this.videoDir(videoId), 'thumbnails');
   }
+  publishedDir(): string {
+    return this.abs(path.join('published'));
+  }
+  publishedPath(reelId: string): string {
+    return path.join(this.publishedDir(), `${reelId}.mp4`);
+  }
 
   async ensureDir(dir: string): Promise<void> {
     await fs.mkdir(dir, { recursive: true });

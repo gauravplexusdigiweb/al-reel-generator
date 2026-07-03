@@ -30,7 +30,13 @@ export type JobState = 'pending' | 'active' | 'completed' | 'failed';
 
 export type ReelStatus = 'candidate' | 'approved' | 'rejected' | 'published';
 
-export type DurationBucket = 15 | 30 | 45 | 60;
+// ---- Consolidated constants (single source of truth) ----
+
+export const ASPECT_RATIOS = ['9:16', '1:1', '4:5'] as const;
+export type AspectRatio = (typeof ASPECT_RATIOS)[number];
+
+export const DURATION_BUCKETS = [15, 30, 45, 60] as const;
+export type DurationBucket = (typeof DURATION_BUCKETS)[number];
 
 export type ReviewAction =
   | 'approve'
@@ -98,11 +104,14 @@ export interface ReelDto {
   suggestedTitle: string | null;
   tags: string[];
   fileUrl: string | null;
+  previewUrl: string | null;
   needsRerender: boolean;
   aspectRatio: string;
+  categoryId: string | null;
   score: ReelScoreDto | null;
   thumbnails: ThumbnailDto[];
   transcript: TranscriptSegment[];
+  posts: SocialPostDto[];
   createdAt: string;
 }
 
@@ -116,7 +125,7 @@ export interface VideoDto {
   codec: string | null;
   sizeBytes: number | null;
   language: string | null;
-  category: string | null;
+  categoryId: string | null;
   createdAt: string;
 }
 
@@ -147,4 +156,85 @@ export interface RegenerateReelRequest {
 
 export interface SelectThumbnailRequest {
   thumbnailId: string;
+}
+
+// ---- Category / Directory types ----
+
+export interface CategoryDto {
+  id: string;
+  name: string;
+  parentId: string | null;
+  sortOrder: number;
+  videoCount: number;
+  reelCount: number;
+  children: CategoryDto[];
+  createdAt: string;
+}
+
+export interface CreateCategoryRequest {
+  name: string;
+  parentId?: string | null;
+}
+
+export interface UpdateCategoryRequest {
+  name?: string;
+  sortOrder?: number;
+  parentId?: string | null;
+}
+
+// ---- Social publishing types ----
+
+export type SocialPlatform = 'instagram' | 'youtube' | 'tiktok' | 'webhook';
+
+export const SOCIAL_PLATFORMS: SocialPlatform[] = ['instagram', 'youtube', 'tiktok', 'webhook'];
+
+export type SocialPostStatus = 'pending' | 'uploading' | 'published' | 'failed';
+
+export interface SocialAccountDto {
+  id: string;
+  platform: SocialPlatform;
+  displayName: string;
+  connectedAt: string;
+  tokenExpiresAt: string | null;
+  platformMeta: Record<string, unknown> | null;
+}
+
+export interface SocialPostDto {
+  id: string;
+  reelId: string;
+  accountId: string;
+  platform: SocialPlatform;
+  status: SocialPostStatus;
+  platformPostId: string | null;
+  permalink: string | null;
+  caption: string | null;
+  hashtags: string[];
+  error: string | null;
+  scheduledAt: string | null;
+  publishedAt: string | null;
+  createdAt: string;
+}
+
+export interface PublishReelRequest {
+  accountIds: string[];
+  caption?: string;
+  hashtags?: string[];
+  scheduledAt?: string;
+  thumbnailId?: string;
+  platformOptions?: Record<string, Record<string, unknown>>;
+}
+
+// ---- Analytics types (Phase F) ----
+
+export interface ReelAnalyticsDto {
+  id: string;
+  reelId: string;
+  platform: SocialPlatform;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  watchTime: number | null;
+  completionRate: number | null;
+  fetchedAt: string;
 }

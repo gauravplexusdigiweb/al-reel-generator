@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReelDto } from '@arg/shared';
+import { ASPECT_RATIOS } from '@arg/shared';
 import { toast } from 'sonner';
 import { Download, Check, X, RefreshCw, Scissors, Star, Trash2, Save, Plus, Archive } from 'lucide-react';
-import { api, mediaUrl, ASPECT_RATIOS } from '@/lib/api';
+import { api, mediaUrl } from '@/lib/api';
 import { formatDuration, scorePct, scoreTone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,7 +13,20 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { ScoreBars } from '@/components/score-bars';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
@@ -36,6 +50,8 @@ export function ReelsReview({ videoId, durationSec }: { videoId: string; duratio
   const reload = useCallback(async () => {
     try {
       setReels(await api.getReels(videoId));
+    } catch {
+      /* silent */
     } finally {
       setLoading(false);
     }
@@ -75,26 +91,28 @@ export function ReelsReview({ videoId, durationSec }: { videoId: string; duratio
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value as typeof filter)}
-          className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-        >
-          <option value="all">All statuses</option>
-          <option value="candidate">Candidate</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-          <option value="published">Published</option>
-        </select>
-        <select
-          value={sort}
-          onChange={(e) => setSort(e.target.value as typeof sort)}
-          className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-        >
-          <option value="score">Sort: score</option>
-          <option value="newest">Sort: newest</option>
-          <option value="duration">Sort: duration</option>
-        </select>
+        <Select value={filter} onValueChange={(v) => setFilter(v as typeof filter)}>
+          <SelectTrigger className="h-8 w-36 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="candidate">Candidate</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+            <SelectItem value="rejected">Rejected</SelectItem>
+            <SelectItem value="published">Published</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={sort} onValueChange={(v) => setSort(v as typeof sort)}>
+          <SelectTrigger className="h-8 w-36 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="score">Sort: score</SelectItem>
+            <SelectItem value="newest">Sort: newest</SelectItem>
+            <SelectItem value="duration">Sort: duration</SelectItem>
+          </SelectContent>
+        </Select>
         <div className="ml-auto flex gap-2">
           <Button size="sm" variant="outline" onClick={() => setNewClipOpen(true)}>
             <Plus className="mr-1 h-3 w-3" /> New clip
@@ -108,9 +126,15 @@ export function ReelsReview({ videoId, durationSec }: { videoId: string; duratio
       </div>
 
       {loading && reels.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Loading reels…</p>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Skeleton key={i} className="aspect-[9/16] w-full" />
+          ))}
+        </div>
       ) : visible.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No reels match this filter.</p>
+        <div className="flex h-48 flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed">
+          <p className="text-sm text-muted-foreground">No reels match this filter.</p>
+        </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {visible.map((reel) => (
@@ -198,17 +222,16 @@ function NewClipDialog({
           />
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Aspect</span>
-            <select
-              value={aspect}
-              onChange={(e) => setAspect(e.target.value)}
-              className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-            >
-              {ASPECT_RATIOS.map((a) => (
-                <option key={a} value={a}>
-                  {a}
-                </option>
-              ))}
-            </select>
+            <Select value={aspect} onValueChange={setAspect}>
+              <SelectTrigger className="h-8 w-32 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ASPECT_RATIOS.map((a) => (
+                  <SelectItem key={a} value={a}>{a}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <Button onClick={create} disabled={busy || range[1] <= range[0]}>
             <Plus className="mr-1 h-4 w-4" /> Create clip
@@ -294,7 +317,6 @@ function ReelReviewPanel({
   }
 
   async function handleDelete() {
-    if (!confirm('Delete this reel?')) return;
     setBusy(true);
     try {
       await api.deleteReel(reel.id);
@@ -359,7 +381,6 @@ function ReelReviewPanel({
         <div className="space-y-4">
           {reel.score && <ScoreBars score={reel.score} />}
 
-          {/* Editable title + tags */}
           <div className="space-y-2">
             <label className="text-xs text-muted-foreground">Title</label>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Reel title" />
@@ -439,21 +460,19 @@ function ReelReviewPanel({
             <Button size="sm" variant="secondary" disabled={busy} onClick={() => run(() => api.regenerate(reel.id, {}), 'Regenerating')}>
               <RefreshCw className="mr-1 h-3 w-3" /> Regenerate
             </Button>
-            <select
+            <Select
               value={reel.aspectRatio}
-              disabled={busy}
-              title="Change aspect ratio (re-renders)"
-              onChange={(e) =>
-                run(() => api.regenerate(reel.id, { aspectRatio: e.target.value }), `Re-rendering at ${e.target.value}`)
-              }
-              className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+              onValueChange={(v) => run(() => api.regenerate(reel.id, { aspectRatio: v }), `Re-rendering at ${v}`)}
             >
-              {ASPECT_RATIOS.map((a) => (
-                <option key={a} value={a}>
-                  {a}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="h-8 w-24 text-xs" disabled={busy}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ASPECT_RATIOS.map((a) => (
+                  <SelectItem key={a} value={a}>{a}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button size="sm" variant="secondary" disabled={busy} onClick={() => run(() => api.publish(reel.id), 'Published & exported locally')}>
               Publish
             </Button>
@@ -464,15 +483,30 @@ function ReelReviewPanel({
                 </a>
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-muted-foreground hover:text-destructive"
-              disabled={busy}
-              onClick={handleDelete}
-            >
-              <Trash2 className="mr-1 h-3 w-3" /> Delete
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-destructive"
+                  disabled={busy}
+                >
+                  <Trash2 className="mr-1 h-3 w-3" /> Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete this reel?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete the reel and all its files.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
       </div>

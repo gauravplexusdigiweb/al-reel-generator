@@ -6,6 +6,17 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { formatBytes, formatDuration } from '@/lib/format';
 import { Film, ChevronRight, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -27,11 +38,9 @@ export function VideoList({
   loading: boolean;
   onChanged?: () => void;
 }) {
-  async function handleDelete(e: React.MouseEvent, v: VideoDto) {
-    e.preventDefault();
-    if (!confirm(`Delete "${v.originalFilename}" and all its reels?`)) return;
+  async function handleDelete(id: string) {
     try {
-      await api.deleteVideo(v.id);
+      await api.deleteVideo(id);
       toast.success('Video deleted');
       onChanged?.();
     } catch (err) {
@@ -62,21 +71,38 @@ export function VideoList({
                 <div className="truncate text-sm font-medium">{v.originalFilename}</div>
                 <div className="text-xs text-muted-foreground">
                   {formatDuration(v.durationSec)} · {formatBytes(v.sizeBytes)} ·{' '}
-                  {new Date(v.createdAt).toLocaleString()}
+                  {new Date(v.createdAt).toLocaleDateString()}
                 </div>
               </div>
               <Badge variant={STATUS_VARIANT[v.status]}>{v.status}</Badge>
               <ChevronRight className="h-4 w-4 text-muted-foreground" />
             </Link>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="shrink-0 text-muted-foreground hover:text-destructive"
-              onClick={(e) => handleDelete(e, v)}
-              title="Delete video"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0 text-muted-foreground hover:text-destructive"
+                  title="Delete video"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete &ldquo;{v.originalFilename}&rdquo;?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will delete the video and all its reels permanently. This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => handleDelete(v.id)}>
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         ))}
       </CardContent>

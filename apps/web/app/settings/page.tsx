@@ -9,6 +9,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function SettingsPage() {
   const [s, setS] = useState<EffectiveSettings | null>(null);
@@ -25,7 +28,14 @@ export default function SettingsPage() {
       .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed to load settings'));
   }, []);
 
-  if (!s) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  if (!s) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-6">
+        <Skeleton className="h-4 w-16" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
 
   const set = <K extends keyof EffectiveSettings>(k: K, v: EffectiveSettings[K]) =>
     setS({ ...s, [k]: v });
@@ -74,27 +84,24 @@ export default function SettingsPage() {
             <Input type="number" value={s.sampleFps} onChange={(e) => set('sampleFps', +e.target.value)} />
           </Field>
           <Field label="Caption preset">
-            <select
-              value={s.captionPreset}
-              onChange={(e) => set('captionPreset', e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-            >
-              <option value="default">default</option>
-              <option value="raised">raised (clears platform UI)</option>
-            </select>
+            <Select value={s.captionPreset} onValueChange={(v) => set('captionPreset', v)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="default">default</SelectItem>
+                <SelectItem value="raised">raised (clears platform UI)</SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={s.karaoke} onChange={(e) => set('karaoke', e.target.checked)} />
-            Word-level karaoke captions
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={s.retainIntermediates}
-              onChange={(e) => set('retainIntermediates', e.target.checked)}
-            />
-            Keep intermediate files (frames, audio) — uses more disk
-          </label>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="karaoke">Word-level karaoke captions</Label>
+            <Switch id="karaoke" checked={s.karaoke} onCheckedChange={(v) => set('karaoke', v)} />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="retain">Keep intermediate files (frames, audio)</Label>
+            <Switch id="retain" checked={s.retainIntermediates} onCheckedChange={(v) => set('retainIntermediates', v)} />
+          </div>
           <Button onClick={save} disabled={busy}>
             <Save className="mr-1 h-4 w-4" /> Save settings
           </Button>

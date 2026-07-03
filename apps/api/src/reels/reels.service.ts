@@ -49,7 +49,7 @@ export class ReelsService {
     const reel = await this.load(id);
     if (!reel.filePath) throw new BadRequestException('Reel has no rendered file yet');
     const src = this.storage.abs(reel.filePath);
-    const dest = this.storage.abs(path.join('published', `${reel.id}.mp4`));
+    const dest = this.storage.publishedPath(reel.id);
     await this.storage.ensureDir(path.dirname(dest));
     await fs.copyFile(src, dest);
     await this.prisma.reel.update({ where: { id }, data: { status: 'published' } });
@@ -151,7 +151,7 @@ export class ReelsService {
     for (let i = 1; i <= 3; i++) {
       await this.storage.remove(path.join(this.storage.thumbnailsDir(reel.videoId), `${id}-${i}.jpg`));
     }
-    await this.storage.remove(this.storage.abs(path.join('published', `${id}.mp4`)));
+    await this.storage.remove(this.storage.publishedPath(id));
   }
 
   async selectThumbnail(id: string, dto: SelectThumbnailDto): Promise<ReelDto> {

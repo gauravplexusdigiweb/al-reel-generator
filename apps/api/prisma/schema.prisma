@@ -50,6 +50,35 @@ enum ReviewAction {
   publish
 }
 
+enum SocialPlatform {
+  instagram
+  youtube
+  tiktok
+  webhook
+}
+
+enum SocialPostStatus {
+  pending
+  uploading
+  published
+  failed
+}
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String
+  parentId  String?
+  sortOrder Int        @default(0)
+  createdAt DateTime   @default(now())
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children Category[] @relation("CategoryTree")
+  videos   Video[]
+  reels    Reel[]
+
+  @@map("categories")
+}
+
 model Video {
   id               String      @id @default(cuid())
   originalFilename String
@@ -61,11 +90,12 @@ model Video {
   codec            String?
   sizeBytes        BigInt?
   language         String?
-  category         String?
+  categoryId       String?
   error            String?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
+  category    Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   jobs        VideoProcessingJob[]
   transcript  VideoTranscript?
   scenes      VideoScene[]
@@ -161,18 +191,23 @@ model Reel {
   durationBucket Int // 15 | 30 | 45 | 60
   status         ReelStatus @default(candidate)
   filePath       String?
+  previewPath    String?
   suggestedTitle String?
   needsRerender  Boolean    @default(false)
   aspectRatio    String     @default("9:16")
+  categoryId     String?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
   video      Video          @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  category   Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   score      ReelScore?
   transcript ReelTranscript?
   tags       ReelTag[]
   thumbnails ReelThumbnail[]
   reviews    AdminReview[]
+  socialPosts SocialPost[]
+  analytics  ReelAnalytics[]
 
   @@map("reels")
 }
@@ -245,4 +280,58 @@ model AdminReview {
   reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
 
   @@map("admin_reviews")
+}
+
+model SocialAccount {
+  id            String   @id @default(cuid())
+  platform      SocialPlatform
+  displayName   String
+  accessToken   String
+  refreshToken  String?
+  tokenExpiresAt DateTime?
+  platformMeta  Json?
+  connectedAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  posts SocialPost[]
+
+  @@map("social_accounts")
+}
+
+model SocialPost {
+  id             String           @id @default(cuid())
+  reelId         String
+  accountId      String
+  platform       SocialPlatform
+  status         SocialPostStatus @default(pending)
+  platformPostId String?
+  permalink      String?
+  caption        String?
+  hashtags       String[]
+  error          String?
+  scheduledAt    DateTime?
+  publishedAt    DateTime?
+  createdAt      DateTime         @default(now())
+
+  reel    Reel          @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  account SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("social_posts")
+}
+
+model ReelAnalytics {
+  id             String   @id @default(cuid())
+  reelId         String
+  platform       SocialPlatform
+  views          Int      @default(0)
+  likes          Int      @default(0)
+  comments       Int      @default(0)
+  shares         Int      @default(0)
+  watchTime      Float?
+  completionRate Float?
+  fetchedAt      DateTime @default(now())
+
+  reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+
+  @@map("reel_analytics")
 }

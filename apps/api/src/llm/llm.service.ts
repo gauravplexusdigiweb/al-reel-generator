@@ -23,13 +23,27 @@ export class LlmService {
     return this.provider;
   }
 
+  // ────────────────────────────────────────────────────────────────────
+  // Title + Tags
+  // ────────────────────────────────────────────────────────────────────
+
   async generateTitleAndTags(text: string): Promise<{ title: string; tags: string[] }> {
     const prompt =
-      `You are a social media editor. From the transcript below, produce a punchy vertical-video ` +
-      `reel title (max 8 words) and 3-6 lowercase topic tags. Respond ONLY as JSON: ` +
-      `{"title": string, "tags": string[]}.\n\nTranscript:\n"""${text.slice(0, 2000)}"""`;
+      `You are a social media content strategist specializing in vertical short-form video (Reels, TikTok, Shorts).\n\n` +
+      `From the transcript below, create:\n` +
+      `1. A click-worthy reel title (max 8 words) that:\n` +
+      `   - Sparks curiosity without being clickbait\n` +
+      `   - Uses action verbs and power words\n` +
+      `   - Includes a number or specific claim when possible\n` +
+      `   - Is optimized for the explore/discovery page\n\n` +
+      `2. 3-8 lowercase topic tags (single words or short phrases) that:\n` +
+      `   - Mix broad (#marketing) and specific (#b2bsaas) terms\n` +
+      `   - Are commonly searched on social platforms\n` +
+      `   - Reflect the actual content\n\n` +
+      `Respond ONLY as JSON: {"title": string, "tags": string[]}.\n\n` +
+      `Transcript:\n"""${text.slice(0, 2000)}"""`;
     try {
-      const out = await this.provider.complete(prompt, { json: true });
+      const out = await this.provider.complete(prompt, { json: true, temperature: 0.5 });
       const parsed = safeJson<{ title?: string; tags?: string[] }>(out);
       const title = (parsed?.title || '').trim();
       const tags = (parsed?.tags || []).map((t) => String(t).toLowerCase().trim()).filter(Boolean);
@@ -40,13 +54,32 @@ export class LlmService {
     return { title: heuristicTitle(text), tags: heuristicTags(text) };
   }
 
+  // ────────────────────────────────────────────────────────────────────
+  // Hook scoring
+  // ────────────────────────────────────────────────────────────────────
+
   /** Score the strength of a reel's opening hook, 0..1. */
   async scoreHook(openingText: string): Promise<number> {
     const prompt =
-      `Rate how strong this video opening HOOK is for retaining a scroller, from 0 to 100. ` +
-      `Consider curiosity, tension, and clarity. Respond ONLY as JSON {"score": number}.\n\n"""${openingText.slice(0, 500)}"""`;
+      `You are an expert in short-form video content. Rate the HOOK POWER of this opening text for a vertical reel.\n\n` +
+      `A strong hook (70-100):\n` +
+      `  - Grabs attention within the first 2 seconds\n` +
+      `  - Creates curiosity, tension, or promises value\n` +
+      `  - Uses direct address ("you", "your"), questions, numbers, or bold claims\n` +
+      `  - Makes the viewer want to keep watching\n\n` +
+      `A moderate hook (40-69):\n` +
+      `  - Interesting but takes a few seconds to engage\n` +
+      `  - Sets up context before the payoff\n\n` +
+      `A weak hook (0-39):\n` +
+      `  - Starts mid-thought or with filler ("so", "basically", "anyway")\n` +
+      `  - Is vague or generic\n` +
+      `  - Does not create urgency or curiosity\n\n` +
+      `Respond ONLY as JSON: {"score": number, "reason": "one phrase"}.\n\n` +
+      `Opening text:\n"""${openingText.slice(0, 500)}"""`;
     try {
-      const parsed = safeJson<{ score?: number }>(await this.provider.complete(prompt, { json: true }));
+      const parsed = safeJson<{ score?: number }>(
+        await this.provider.complete(prompt, { json: true, temperature: 0.2 }),
+      );
       if (parsed && typeof parsed.score === 'number') return c01(parsed.score / 100);
     } catch (e) {
       this.logger.warn(`scoreHook fell back to heuristic: ${e}`);
@@ -54,13 +87,26 @@ export class LlmService {
     return heuristicHook(openingText);
   }
 
+  // ────────────────────────────────────────────────────────────────────
+  // Emotion scoring
+  // ────────────────────────────────────────────────────────────────────
+
   /** Emotional intensity of a passage, 0..1. */
   async scoreEmotion(text: string): Promise<number> {
     const prompt =
-      `Rate the emotional intensity of this transcript from 0 to 100 ` +
-      `(0 = flat/monotone, 100 = highly emotional). Respond ONLY as JSON {"score": number}.\n\n"""${text.slice(0, 800)}"""`;
+      `You are analyzing the emotional intensity of a video transcript segment.\n\n` +
+      `Score from 0 to 100 where:\n` +
+      `  0-30  : Flat, informational, neutral tone (lecture, documentation)\n` +
+      `  31-50 : Mild engagement, conversational (casual discussion)\n` +
+      `  51-70 : Clear emotional content (passion, excitement, frustration)\n` +
+      `  71-85 : Highly emotional (anger, joy, vulnerability, inspiration)\n` +
+      `  86-100: Extremely intense (peak excitement, deep emotion, revelation)\n\n` +
+      `Respond ONLY as JSON: {"score": number, "primary_emotion": "one word"}.\n\n` +
+      `Transcript:\n"""${text.slice(0, 800)}"""`;
     try {
-      const parsed = safeJson<{ score?: number }>(await this.provider.complete(prompt, { json: true }));
+      const parsed = safeJson<{ score?: number }>(
+        await this.provider.complete(prompt, { json: true, temperature: 0.2 }),
+      );
       if (parsed && typeof parsed.score === 'number') return c01(parsed.score / 100);
     } catch (e) {
       this.logger.warn(`scoreEmotion fell back to heuristic: ${e}`);
@@ -68,31 +114,57 @@ export class LlmService {
     return heuristicEmotion(text);
   }
 
+  // ────────────────────────────────────────────────────────────────────
+  // Passage ranking
+  // ────────────────────────────────────────────────────────────────────
+
   /**
-   * Rank passages by "reel-worthiness" (hook + interest). Returns a 0..1 score per
-   * passage, index-aligned with the input.
+   * Rank passages by "reel-worthiness" (hook + interest + self-containment).
+   * Returns a 0..1 score per passage, index-aligned with the input.
    */
   async rankPassages(passages: string[]): Promise<number[]> {
     if (passages.length === 0) return [];
-    const numbered = passages.map((p, i) => `${i}: ${p.slice(0, 240)}`).join('\n');
-    const prompt =
-      `You rank transcript passages by how well they would work as a standalone short vertical reel ` +
-      `(strong hook, emotion, self-contained insight). For EACH index below, give a score 0-100. ` +
-      `Respond ONLY as JSON {"scores": {"<index>": number, ...}}.\n\n${numbered}`;
-    try {
-      const parsed = safeJson<{ scores?: Record<string, number> }>(
-        await this.provider.complete(prompt, { json: true, timeoutMs: 90_000 }),
-      );
-      if (parsed?.scores) {
-        return passages.map((p, i) => {
-          const v = parsed.scores?.[String(i)];
-          return typeof v === 'number' ? c01(v / 100) : heuristicInterest(p);
-        });
+
+    // Batch in groups of 20 to keep the prompt manageable for smaller models.
+    const BATCH_SIZE = 20;
+    const results: number[] = new Array(passages.length).fill(0);
+
+    for (let batchStart = 0; batchStart < passages.length; batchStart += BATCH_SIZE) {
+      const batch = passages.slice(batchStart, batchStart + BATCH_SIZE);
+      const numbered = batch.map((p, i) => `${batchStart + i}: ${p.slice(0, 280)}`).join('\n');
+
+      const prompt =
+        `You are an expert social media editor for short-form vertical video (Reels, TikTok, Shorts).\n\n` +
+        `Evaluate each transcript passage as a potential standalone reel clip. Score 0-100 based on:\n\n` +
+        `  1. HOOK POWER (30%): Does the opening grab attention? (questions, bold claims, "you", numbers)\n` +
+        `  2. SELF-CONTAINMENT (25%): Would this make sense without prior context?\n` +
+        `  3. EMOTIONAL IMPACT (20%): Does it evoke surprise, excitement, tension, or inspiration?\n` +
+        `  4. PACING (15%): Is the information density appropriate for 15-60 seconds?\n` +
+        `  5. ACTIONABILITY (10%): Does it inspire the viewer to share, save, or act?\n\n` +
+        `Respond ONLY as JSON: {"scores": {"0": 85, "1": 42, ...}}.\n\n` +
+        `Transcript passages:\n${numbered}`;
+
+      try {
+        const parsed = safeJson<{ scores?: Record<string, number> }>(
+          await this.provider.complete(prompt, { json: true, temperature: 0.3, timeoutMs: 90_000 }),
+        );
+        if (parsed?.scores) {
+          for (let i = 0; i < batch.length; i++) {
+            const idx = batchStart + i;
+            const v = parsed.scores?.[String(idx)] ?? parsed.scores?.[String(i)];
+            results[idx] = typeof v === 'number' ? c01(v / 100) : heuristicInterest(batch[i]);
+          }
+          continue;
+        }
+      } catch (e) {
+        this.logger.warn(`rankPassages batch ${batchStart} fell back to heuristic: ${e}`);
       }
-    } catch (e) {
-      this.logger.warn(`rankPassages fell back to heuristic: ${e}`);
+      // Fallback for this batch.
+      for (let i = 0; i < batch.length; i++) {
+        results[batchStart + i] = heuristicInterest(batch[i]);
+      }
     }
-    return passages.map(heuristicInterest);
+    return results;
   }
 }
 

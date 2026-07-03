@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
@@ -15,6 +15,7 @@ import { buildCaptions } from '../util/captions';
 import { aspectDims } from '../util/aspect';
 import { segmentsInWindow, windowText } from '../util/highlights';
 import { computeScores } from '../util/scoring';
+import { pickThumbnailTimestamps } from '../util/thumbnail';
 
 const FACE_CONFIDENCE = 0.5;
 
@@ -25,6 +26,7 @@ function escapeSubtitlePath(p: string): string {
 
 @Injectable()
 export class RenderStep {
+  private readonly logger = new Logger(RenderStep.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
@@ -68,7 +70,7 @@ export class RenderStep {
     // Target-aspect video: face-tracked crop when a speaker is present, else blurred fill.
     const hasFace = windowHasFace(faces, reel.startSec, reel.endSec, FACE_CONFIDENCE);
     let filter = hasFace
-      ? buildCropFilter(faces, reel.startSec, reel.endSec, srcW, srcH, target)
+      ? buildCropFilter(faces, reel.startSec, reel.endSec, srcW, srcH, target, energy)
       : buildBlurFillFilter(target);
     // Word-level karaoke captions when word timings exist, else plain (edited captions win).
     const ass = useEditedTranscript
@@ -91,19 +93,36 @@ export class RenderStep {
       onProgress,
     });
 
-    // 3 thumbnails from the rendered 9:16 reel.
+    // Smart thumbnails: score candidate frames by face visibility, energy, position.
+    const thumbTimes = pickThumbnailTimestamps({
+      startSec: reel.startSec,
+      endSec: reel.endSec,
+      faces,
+      energy,
+      scenes,
+      count: 3,
+    });
     const thumbsDir = this.storage.thumbnailsDir(videoId);
     const thumbRelPaths: string[] = [];
+    const fallbackTimes = [0.1, 0.5, 0.9].map((f) => reelDur * f);
     for (let i = 0; i < 3; i++) {
-      const frac = [0.1, 0.5, 0.9][i];
+      const t = thumbTimes[i] ?? fallbackTimes[i];
       const tp = path.join(thumbsDir, `${reelId}-${i + 1}.jpg`);
-      await this.ffmpeg.extractFrameAt(out, Math.min(reelDur - 0.1, reelDur * frac), tp);
+      await this.ffmpeg.extractFrameAt(out, Math.min(reelDur - 0.1, t), tp);
       thumbRelPaths.push(this.storage.rel(tp));
     }
     await this.prisma.reelThumbnail.deleteMany({ where: { reelId } });
     await this.prisma.reelThumbnail.createMany({
       data: thumbRelPaths.map((p, i) => ({ reelId, path: p, selected: i === 0 })),
     });
+
+    // Low-res 270x480 preview for quick review in the web UI.
+    const previewFile = path.join(this.storage.reelsDir(videoId), `${reelId}-preview.mp4`);
+    try {
+      await this.ffmpeg.generatePreview(out, previewFile);
+    } catch (e) {
+      this.logger.warn(`Preview generation failed for ${reelId}: ${e}`);
+    }
 
     // Scores (heuristics + LLM hook/emotion).
     const fullText = windowText(segments, reel.startSec, reel.endSec);
@@ -153,6 +172,7 @@ export class RenderStep {
 
     // Title + tags: generate once (first render); preserve admin edits afterwards.
     const existingTags = await this.prisma.reelTag.count({ where: { reelId } });
+    const previewRel = (await this.storage.exists(previewFile)) ? this.storage.rel(previewFile) : null;
     if (!reel.suggestedTitle && existingTags === 0) {
       const { title, tags } = await this.llm.generateTitleAndTags(fullText || 'reel');
       if (tags.length) {
@@ -163,12 +183,12 @@ export class RenderStep {
       }
       await this.prisma.reel.update({
         where: { id: reelId },
-        data: { filePath: this.storage.rel(out), suggestedTitle: title, needsRerender: false },
+        data: { filePath: this.storage.rel(out), suggestedTitle: title, needsRerender: false, previewPath: previewRel },
       });
     } else {
       await this.prisma.reel.update({
         where: { id: reelId },
-        data: { filePath: this.storage.rel(out), needsRerender: false },
+        data: { filePath: this.storage.rel(out), needsRerender: false, previewPath: previewRel },
       });
     }
 

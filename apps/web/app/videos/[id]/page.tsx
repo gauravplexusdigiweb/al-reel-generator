@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Folder } from 'lucide-react';
 import { toast } from 'sonner';
-import type { VideoStatusDto } from '@arg/shared';
+import type { VideoStatusDto, CategoryDto } from '@arg/shared';
 import { api } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PipelineStatus } from '@/components/pipeline-status';
 import { ReelsReview } from '@/components/reels-review';
 import { formatDuration } from '@/lib/format';
@@ -17,22 +19,44 @@ export default function VideoDetailPage({ params }: { params: { id: string } }) 
   const { id } = params;
   const [status, setStatus] = useState<VideoStatusDto | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [categories, setCategories] = useState<CategoryDto[]>([]);
+
+  useEffect(() => {
+    api.getCategories().then(setCategories).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let active = true;
+    let interval: ReturnType<typeof setInterval>;
+
     const poll = async () => {
       try {
         const s = await api.getStatus(id);
-        if (active) setStatus(s);
+        if (!active) return;
+        setStatus(s);
+        setError(null);
+
+        if (s.video.status === 'ready' || s.video.status === 'failed') {
+          clearInterval(interval);
+          return;
+        }
       } catch (e) {
         if (active) setError(e instanceof Error ? e.message : 'Failed to load');
       }
     };
+
     void poll();
-    const t = setInterval(poll, 2500);
+    interval = setInterval(poll, 2500);
+
+    const onVisibility = () => {
+      if (!document.hidden && active) void poll();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
     return () => {
       active = false;
-      clearInterval(t);
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [id]);
 
@@ -45,12 +69,41 @@ export default function VideoDetailPage({ params }: { params: { id: string } }) 
     }
   }
 
-  if (error) return <p className="text-sm text-red-500">{error}</p>;
-  if (!status) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  async function handleMoveCategory(categoryId: string) {
+    try {
+      await api.moveVideo(id, categoryId === '__none' ? null : categoryId);
+      toast.success('Category updated');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to move');
+    }
+  }
+
+  if (error && !status) return <p className="text-sm text-red-500">{error}</p>;
+  if (!status) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-4 w-20" />
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
 
   const { video } = status;
   const isReady = video.status === 'ready';
   const isFailed = video.status === 'failed';
+  const isTerminal = isReady || isFailed;
+
+  function flattenForSelect(cats: CategoryDto[], depth = 0): Array<{ id: string; name: string; depth: number }> {
+    const result: Array<{ id: string; name: string; depth: number }> = [];
+    for (const c of cats) {
+      result.push({ id: c.id, name: c.name, depth });
+      result.push(...flattenForSelect(c.children, depth + 1));
+    }
+    return result;
+  }
+
+  const flatCats = flattenForSelect(categories);
 
   return (
     <div className="space-y-6">
@@ -68,6 +121,25 @@ export default function VideoDetailPage({ params }: { params: { id: string } }) 
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Select
+            value={video.categoryId ?? '__none'}
+            onValueChange={(v) => handleMoveCategory(v)}
+          >
+            <SelectTrigger className="h-8 w-40 text-xs">
+              <div className="flex items-center gap-1">
+                <Folder className="h-3 w-3" />
+                <SelectValue placeholder="Uncategorized" />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none">Uncategorized</SelectItem>
+              {flatCats.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {'\u00A0'.repeat(c.depth * 2)}{c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Badge variant={isReady ? 'success' : isFailed ? 'destructive' : 'warning'}>
             {video.status}
           </Badge>
@@ -79,7 +151,7 @@ export default function VideoDetailPage({ params }: { params: { id: string } }) 
         </div>
       </div>
 
-      {!isReady && (
+      {!isTerminal && (
         <Card>
           <CardHeader>
             <CardTitle>Processing</CardTitle>

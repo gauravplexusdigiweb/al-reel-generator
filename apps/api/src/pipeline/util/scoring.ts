@@ -1,5 +1,6 @@
 import type { FaceSample, ReelScoreDto, SceneDto, TranscriptSegment } from '@arg/shared';
 import { speechDensity, windowEnergy, windowMotion } from './highlights';
+import { windowActiveSpeakerCoverage } from './crop';
 
 export const SCORE_WEIGHTS = {
   hook: 0.22,
@@ -44,11 +45,14 @@ export function computeScores(input: ScoreInputs): ReelScoreDto {
   // motion from scene metrics
   const motion = c01(windowMotion(scenes, startSec, endSec));
 
-  // face visibility: detected-face samples / expected samples in window
+  // face visibility: detected-face samples / expected samples in window,
+  // boosted by active-speaker coverage (faces present during high-energy speech).
   const inWindow = faces.filter((f) => f.t >= startSec && f.t < endSec);
   const withFace = inWindow.filter((f) => f.boxes.some((b) => b.score >= faceConfidence)).length;
   const expected = Math.max(1, Math.round(dur * sampleFps));
-  const faceVisibility = c01(withFace / expected);
+  const rawFaceVis = c01(withFace / expected);
+  const activeSpeaker = windowActiveSpeakerCoverage(faces, energy, startSec, endSec, faceConfidence);
+  const faceVisibility = c01(0.7 * rawFaceVis + 0.3 * activeSpeaker);
 
   const energyNorm = c01(windowEnergy(energy, startSec, endSec));
 
@@ -73,6 +77,6 @@ export function computeScores(input: ScoreInputs): ReelScoreDto {
   return {
     ...parts,
     overall,
-    rationale: { wps: Number(wps.toFixed(2)), density: Number(density.toFixed(2)), energyNorm: Number(energyNorm.toFixed(2)), churn: Number(churn.toFixed(2)) },
+    rationale: { wps: Number(wps.toFixed(2)), density: Number(density.toFixed(2)), energyNorm: Number(energyNorm.toFixed(2)), churn: Number(churn.toFixed(2)), activeSpeaker: Number(activeSpeaker.toFixed(2)) },
   };
 }

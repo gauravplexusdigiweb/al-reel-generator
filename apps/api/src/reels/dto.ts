@@ -9,6 +9,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { ASPECT_RATIOS, DURATION_BUCKETS } from '@arg/shared';
 
 export class TrimReelDto {
   @ApiProperty({ description: 'New start time (seconds, absolute in source video)' })
@@ -23,14 +24,14 @@ export class TrimReelDto {
 }
 
 export class RegenerateReelDto {
-  @ApiPropertyOptional({ enum: [15, 30, 45, 60], description: 'Target duration bucket (seconds)' })
+  @ApiPropertyOptional({ enum: DURATION_BUCKETS, description: 'Target duration bucket (seconds)' })
   @IsOptional()
-  @IsIn([15, 30, 45, 60])
+  @IsIn(DURATION_BUCKETS)
   durationBucket?: number;
 
-  @ApiPropertyOptional({ enum: ['9:16', '1:1', '4:5'], description: 'Target aspect ratio' })
+  @ApiPropertyOptional({ enum: ASPECT_RATIOS, description: 'Target aspect ratio' })
   @IsOptional()
-  @IsIn(['9:16', '1:1', '4:5'])
+  @IsIn(ASPECT_RATIOS)
   aspectRatio?: string;
 }
 

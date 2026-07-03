@@ -24,7 +24,7 @@ export class VideosService {
     this.allowedFormats = config.get('upload', { infer: true }).allowedFormats;
   }
 
-  async createFromUpload(file: Express.Multer.File): Promise<{ videoId: string }> {
+  async createFromUpload(file: Express.Multer.File, categoryId?: string): Promise<{ videoId: string }> {
     if (!file) throw new BadRequestException('No file uploaded (field "file")');
     const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
     if (!this.allowedFormats.includes(ext)) {
@@ -34,12 +34,18 @@ export class VideosService {
       );
     }
 
+    if (categoryId) {
+      const cat = await this.prisma.category.findUnique({ where: { id: categoryId } });
+      if (!cat) throw new BadRequestException('Category not found');
+    }
+
     const video = await this.prisma.video.create({
       data: {
         originalFilename: file.originalname,
         storedPath: '',
         status: 'uploaded',
         sizeBytes: BigInt(file.size),
+        categoryId: categoryId ?? null,
       },
     });
 
@@ -54,8 +60,9 @@ export class VideosService {
     return { videoId: video.id };
   }
 
-  async list(): Promise<VideoDto[]> {
-    const videos = await this.prisma.video.findMany({ orderBy: { createdAt: 'desc' } });
+  async list(categoryId?: string): Promise<VideoDto[]> {
+    const where = categoryId ? { categoryId } : {};
+    const videos = await this.prisma.video.findMany({ where, orderBy: { createdAt: 'desc' } });
     return videos.map((v) => this.mapper.toVideoDto(v));
   }
 
@@ -63,6 +70,18 @@ export class VideosService {
     const video = await this.prisma.video.findUnique({ where: { id } });
     if (!video) throw new NotFoundException('Video not found');
     return this.mapper.toVideoDto(video);
+  }
+
+  async moveCategory(id: string, categoryId: string | null): Promise<VideoDto> {
+    const video = await this.prisma.video.findUnique({ where: { id } });
+    if (!video) throw new NotFoundException('Video not found');
+    if (categoryId) {
+      const cat = await this.prisma.category.findUnique({ where: { id: categoryId } });
+      if (!cat) throw new BadRequestException('Category not found');
+    }
+    await this.prisma.video.update({ where: { id }, data: { categoryId } });
+    await this.prisma.reel.updateMany({ where: { videoId: id }, data: { categoryId } });
+    return this.get(id);
   }
 
   async status(id: string): Promise<VideoStatusDto> {
@@ -98,6 +117,7 @@ export class VideosService {
         durationBucket: dto.durationBucket ?? Math.round(dto.endSec - dto.startSec),
         aspectRatio: dto.aspectRatio ?? '9:16',
         status: 'candidate',
+        categoryId: video.categoryId,
       },
     });
     await this.dispatcher.enqueueSingleRender(videoId, reel.id);

@@ -16,20 +16,30 @@ interface Center {
 /**
  * Pick the on-screen speaker for a frame: weighted by face size, centrality, and
  * temporal continuity with the previously tracked face (so the crop doesn't jump
- * between people). Approximates active-speaker tracking without audio-visual sync.
+ * between people). When audio energy is available, the area weight increases during
+ * high-energy (speaking) moments so the dominant face is more aggressively selected —
+ * approximating active-speaker tracking without lip-sync analysis.
  */
-function pickSpeakerFace(sample: FaceSample, prev: Center | null): Center | null {
+function pickSpeakerFace(sample: FaceSample, prev: Center | null, energyAtT?: number): Center | null {
   if (!sample.boxes.length) return null;
   const maxArea = Math.max(...sample.boxes.map((b) => b.w * b.h)) || 1;
   let best: Center | null = null;
   let bestScore = -Infinity;
+
+  // During high energy (speaking), weight area more — the dominant face is likely the speaker.
+  // During low energy (silence), weight continuity more — maintain the previous crop (don't jump).
+  const e = energyAtT ?? 0.5;
+  const areaWeight = 0.3 + 0.25 * e;        // 0.30..0.55
+  const centralityWeight = 0.2;
+  const continuityWeight = 1 - areaWeight - centralityWeight; // 0.50..0.25
+
   for (const b of sample.boxes) {
     const cx = b.x + b.w / 2;
     const cy = b.y + b.h / 2;
     const area = (b.w * b.h) / maxArea;
     const centrality = 1 - Math.min(1, Math.hypot(cx - 0.5, cy - 0.5) / 0.7);
     const continuity = prev ? 1 - Math.min(1, Math.hypot(cx - prev.cx, cy - prev.cy)) : centrality;
-    const score = 0.5 * area + 0.2 * centrality + 0.3 * continuity;
+    const score = areaWeight * area + centralityWeight * centrality + continuityWeight * continuity;
     if (score > bestScore) {
       bestScore = score;
       best = { cx, cy };
@@ -53,6 +63,34 @@ export function windowHasFace(
 }
 
 /**
+ * Fraction of high-energy moments in the window that have a confidently-detected
+ * face — a proxy for "the speaker is on camera." Returns 0 when no energy data.
+ */
+export function windowActiveSpeakerCoverage(
+  faces: FaceSample[],
+  energy: number[],
+  startSec: number,
+  endSec: number,
+  confidence = 0.5,
+): number {
+  if (!energy.length) return 0;
+  const lo = Math.floor(startSec);
+  const hi = Math.min(energy.length, Math.ceil(endSec));
+  const inWin = energy.slice(lo, hi);
+  if (inWin.length === 0) return 0;
+  const sorted = [...inWin].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
+  const highEnergySecs = median > 0.01
+    ? inWin.map((e, i) => ({ e, t: lo + i })).filter(({ e }) => e >= median)
+    : [];
+  if (highEnergySecs.length === 0) return 0;
+  const withFace = highEnergySecs.filter(({ t }) =>
+    faces.some((f) => Math.floor(f.t) === t && f.boxes.some((b) => b.score >= confidence)),
+  ).length;
+  return withFace / highEnergySecs.length;
+}
+
+/**
  * 9:16 fill for face-less scenes: the whole frame fits inside a blurred, zoomed
  * copy of itself — far more polished than a hard center-crop.
  */
@@ -69,8 +107,9 @@ export function buildBlurFillFilter(target: Dims = DEFAULT_TARGET): string {
 
 /**
  * Build an FFmpeg -vf chain that crops a 9:16 window tracking the dominant face
- * (smoothed for "smart camera movement") and scales to 1080x1920. Falls back to a
- * centered crop when no faces are available.
+ * (smoothed for "smart camera movement") and scales to 1080x1920. When audio
+ * energy is provided, tracking is energy-adaptive: faster during speech, smoother
+ * during silence. Falls back to a centered crop when no faces are available.
  */
 export function buildCropFilter(
   faces: FaceSample[],
@@ -79,6 +118,7 @@ export function buildCropFilter(
   srcW: number,
   srcH: number,
   target: Dims = DEFAULT_TARGET,
+  energy?: number[],
 ): string {
   const dur = Math.max(0.1, endSec - startSec);
   const aspect = target.w / target.h;
@@ -102,7 +142,8 @@ export function buildCropFilter(
   const pts: Array<{ t: number; c: Center }> = [];
   let prevCenter: Center | null = null;
   for (const s of inWindow) {
-    const c = pickSpeakerFace(s, prevCenter);
+    const e = energy?.[Math.floor(s.t)] ?? undefined;
+    const c = pickSpeakerFace(s, prevCenter, e);
     if (!c) continue;
     prevCenter = c;
     pts.push({ t: s.t - startSec, c });
@@ -114,14 +155,16 @@ export function buildCropFilter(
     return `crop=${cropW}:${cropH}:${x}:${y},${scaleTail}`;
   }
 
-  // Convert to top-left crop coords, EMA-smooth, then downsample to keyframes.
+  // Convert to top-left crop coords, energy-adaptive EMA-smooth, then downsample to keyframes.
   let emaX: number | null = null;
   let emaY: number | null = null;
   const smoothed = pts.map((p) => {
     const tx = clamp(p.c.cx * srcW - cropW / 2, 0, maxX);
     const ty = clamp(p.c.cy * srcH - cropH / 2, 0, maxY);
-    emaX = emaX === null ? tx : EMA_ALPHA * tx + (1 - EMA_ALPHA) * emaX;
-    emaY = emaY === null ? ty : EMA_ALPHA * ty + (1 - EMA_ALPHA) * emaY;
+    const e = energy?.[Math.floor(p.t + startSec)] ?? 0.5;
+    const alpha = Math.min(0.7, EMA_ALPHA + 0.2 * e);
+    emaX = emaX === null ? tx : alpha * tx + (1 - alpha) * emaX;
+    emaY = emaY === null ? ty : alpha * ty + (1 - alpha) * emaY;
     return { t: p.t, x: emaX, y: emaY };
   });
 

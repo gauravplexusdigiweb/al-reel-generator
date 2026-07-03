@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   Param,
+  Patch,
   Post,
   Query,
   Res,
@@ -16,7 +17,7 @@ import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import archiver from 'archiver';
 import { VideosService } from './videos.service';
-import { CreateReelDto } from './dto';
+import { CreateReelDto, MoveVideoDto } from './dto';
 
 @ApiTags('videos')
 @Controller('videos')
@@ -27,20 +28,29 @@ export class VideosController {
   @ApiOperation({ summary: 'Upload a video and start the reel-generation pipeline' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file'))
-  async upload(@UploadedFile() file: Express.Multer.File) {
-    return this.videos.createFromUpload(file);
+  async upload(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('categoryId') categoryId?: string,
+  ) {
+    return this.videos.createFromUpload(file, categoryId);
   }
 
   @Get()
-  @ApiOperation({ summary: 'List uploaded videos' })
-  list() {
-    return this.videos.list();
+  @ApiOperation({ summary: 'List uploaded videos (optionally filtered by category)' })
+  list(@Query('categoryId') categoryId?: string) {
+    return this.videos.list(categoryId);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a video' })
   get(@Param('id') id: string) {
     return this.videos.get(id);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Move a video to a different category' })
+  move(@Param('id') id: string, @Body() dto: MoveVideoDto) {
+    return this.videos.moveCategory(id, dto.categoryId ?? null);
   }
 
   @Get(':id/status')

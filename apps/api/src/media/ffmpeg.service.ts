@@ -136,6 +136,31 @@ export class FfmpegService {
     );
   }
 
+  /** Extract a segment of an audio file (no re-encode for WAV). */
+  async extractAudioChunk(input: string, output: string, startSec: number, durationSec: number): Promise<void> {
+    await fs.mkdir(path.dirname(output), { recursive: true });
+    await this.run([
+      '-ss', startSec.toFixed(3),
+      '-t', durationSec.toFixed(3),
+      '-i', input,
+      '-c', 'copy',
+      output,
+    ]);
+  }
+
+  /** Generate a low-res preview from a rendered reel (270x480 for 9:16). */
+  async generatePreview(input: string, output: string): Promise<void> {
+    await fs.mkdir(path.dirname(output), { recursive: true });
+    await this.run([
+      '-i', input,
+      '-vf', 'scale=270:480',
+      '-an',
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28',
+      '-movflags', '+faststart',
+      output,
+    ]);
+  }
+
   get ffmpegPath(): string {
     return this.ffmpegBin;
   }

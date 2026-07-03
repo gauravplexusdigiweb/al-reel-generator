@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type {
+  CategoryDto,
   DurationBucket,
   ReelDto,
+  SocialAccountDto,
+  SocialPostDto,
   StepStatusDto,
   TranscriptSegment,
   VideoDto,
@@ -16,6 +19,7 @@ const reelInclude = {
   transcript: true,
   tags: true,
   thumbnails: true,
+  socialPosts: true,
 } satisfies Prisma.ReelInclude;
 
 export type ReelWithRelations = Prisma.ReelGetPayload<{ include: typeof reelInclude }>;
@@ -39,7 +43,7 @@ export class MapperService {
       codec: v.codec,
       sizeBytes: v.sizeBytes === null ? null : Number(v.sizeBytes),
       language: v.language,
-      category: v.category,
+      categoryId: v.categoryId,
       createdAt: v.createdAt.toISOString(),
     };
   }
@@ -55,8 +59,10 @@ export class MapperService {
       suggestedTitle: r.suggestedTitle,
       tags: r.tags.map((t) => t.tag),
       fileUrl: r.filePath ? this.storage.publicUrl(r.filePath) : null,
+      previewUrl: r.previewPath ? this.storage.publicUrl(r.previewPath) : null,
       needsRerender: r.needsRerender,
       aspectRatio: r.aspectRatio,
+      categoryId: r.categoryId,
       score: r.score
         ? {
             hook: r.score.hook,
@@ -76,7 +82,37 @@ export class MapperService {
         selected: t.selected,
       })),
       transcript: (r.transcript?.segments as unknown as TranscriptSegment[]) ?? [],
+      posts: (r.socialPosts ?? []).map((p) => this.toSocialPostDto(p)),
       createdAt: r.createdAt.toISOString(),
+    };
+  }
+
+  toSocialAccountDto(a: Prisma.SocialAccountGetPayload<Record<string, never>>): SocialAccountDto {
+    return {
+      id: a.id,
+      platform: a.platform,
+      displayName: a.displayName,
+      connectedAt: a.connectedAt.toISOString(),
+      tokenExpiresAt: a.tokenExpiresAt?.toISOString() ?? null,
+      platformMeta: (a.platformMeta as Record<string, unknown>) ?? null,
+    };
+  }
+
+  toSocialPostDto(p: Prisma.SocialPostGetPayload<Record<string, never>>): SocialPostDto {
+    return {
+      id: p.id,
+      reelId: p.reelId,
+      accountId: p.accountId,
+      platform: p.platform,
+      status: p.status,
+      platformPostId: p.platformPostId,
+      permalink: p.permalink,
+      caption: p.caption,
+      hashtags: p.hashtags,
+      error: p.error,
+      scheduledAt: p.scheduledAt?.toISOString() ?? null,
+      publishedAt: p.publishedAt?.toISOString() ?? null,
+      createdAt: p.createdAt.toISOString(),
     };
   }
 

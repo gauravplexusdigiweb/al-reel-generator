@@ -4,6 +4,9 @@ import type {
   VideoStatusDto,
   TrimReelRequest,
   RegenerateReelRequest,
+  CategoryDto,
+  SocialAccountDto,
+  SocialPostDto,
 } from '@arg/shared';
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000';
@@ -57,30 +60,29 @@ export interface EffectiveSettings {
   karaoke: boolean;
 }
 
-export const ASPECT_RATIOS = ['9:16', '1:1', '4:5'];
+export { ASPECT_RATIOS } from '@arg/shared';
 
 export const api = {
-  listVideos: () => req<VideoDto[]>('/videos'),
+  // ---- Videos ----
+  listVideos: (categoryId?: string) =>
+    req<VideoDto[]>(`/videos${categoryId ? `?categoryId=${categoryId}` : ''}`),
   getVideo: (id: string) => req<VideoDto>(`/videos/${id}`),
   getStatus: (id: string) => req<VideoStatusDto>(`/videos/${id}/status`),
-  getReels: (id: string) => req<ReelDto[]>(`/videos/${id}/reels`),
   deleteVideo: (id: string) => req<void>(`/videos/${id}`, { method: 'DELETE' }),
   retryVideo: (id: string) => req<VideoStatusDto>(`/videos/${id}/retry`, { method: 'POST', body: '{}' }),
+  moveVideo: (id: string, categoryId: string | null) =>
+    req<VideoDto>(`/videos/${id}`, { method: 'PATCH', body: JSON.stringify({ categoryId }) }),
 
-  servicesHealth: () => req<ServicesHealth>('/health/services'),
-
-  updateReel: (id: string, body: UpdateReelBody) =>
-    req<ReelDto>(`/reels/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  // ---- Reels ----
+  getReels: (id: string) => req<ReelDto[]>(`/videos/${id}/reels`),
   deleteReel: (id: string) => req<void>(`/reels/${id}`, { method: 'DELETE' }),
   createReel: (videoId: string, body: CreateReelBody) =>
     req<ReelDto>(`/videos/${videoId}/reels`, { method: 'POST', body: JSON.stringify(body) }),
   exportZipUrl: (videoId: string, status?: string) =>
     `${API_BASE}/videos/${videoId}/reels/export.zip${status ? `?status=${status}` : ''}`,
 
-  getSettings: () => req<EffectiveSettings>('/settings'),
-  updateSettings: (body: Partial<EffectiveSettings>) =>
-    req<EffectiveSettings>('/settings', { method: 'PUT', body: JSON.stringify(body) }),
-
+  updateReel: (id: string, body: UpdateReelBody) =>
+    req<ReelDto>(`/reels/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   approve: (id: string) => req<ReelDto>(`/reels/${id}/approve`, { method: 'POST', body: '{}' }),
   reject: (id: string) => req<ReelDto>(`/reels/${id}/reject`, { method: 'POST', body: '{}' }),
   publish: (id: string) => req<ReelDto>(`/reels/${id}/publish`, { method: 'POST', body: '{}' }),
@@ -90,18 +92,42 @@ export const api = {
     req<ReelDto>(`/reels/${id}/regenerate`, { method: 'POST', body: JSON.stringify(body) }),
   selectThumbnail: (id: string, thumbnailId: string) =>
     req<ReelDto>(`/reels/${id}/thumbnail`, { method: 'POST', body: JSON.stringify({ thumbnailId }) }),
-
   downloadUrl: (id: string) => `${API_BASE}/reels/${id}/download`,
+
+  // ---- Categories ----
+  getCategories: () => req<CategoryDto[]>('/categories'),
+  createCategory: (body: { name: string; parentId?: string | null }) =>
+    req<CategoryDto>('/categories', { method: 'POST', body: JSON.stringify(body) }),
+  updateCategory: (id: string, body: { name?: string; sortOrder?: number; parentId?: string | null }) =>
+    req<CategoryDto>(`/categories/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteCategory: (id: string) => req<void>(`/categories/${id}`, { method: 'DELETE' }),
+
+  // ---- Publishing ----
+  getAccounts: () => req<SocialAccountDto[]>('/publishing/accounts'),
+  deleteAccount: (id: string) => req<void>(`/publishing/accounts/${id}`, { method: 'DELETE' }),
+  publishReel: (reelId: string, body: { accountIds: string[]; caption?: string; hashtags?: string[] }) =>
+    req<SocialPostDto[]>(`/reels/${reelId}/publish`, { method: 'POST', body: JSON.stringify(body) }),
+  getReelPosts: (reelId: string) => req<SocialPostDto[]>(`/reels/${reelId}/posts`),
+
+  // ---- Settings ----
+  getSettings: () => req<EffectiveSettings>('/settings'),
+  updateSettings: (body: Partial<EffectiveSettings>) =>
+    req<EffectiveSettings>('/settings', { method: 'PUT', body: JSON.stringify(body) }),
+
+  // ---- Health ----
+  servicesHealth: () => req<ServicesHealth>('/health/services'),
 };
 
 /** Upload with progress via XHR (fetch can't report upload progress reliably). */
 export function uploadVideo(
   file: File,
   onProgress?: (pct: number) => void,
+  categoryId?: string,
 ): Promise<{ videoId: string }> {
   return new Promise((resolve, reject) => {
     const form = new FormData();
     form.append('file', file);
+    if (categoryId) form.append('categoryId', categoryId);
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${API_BASE}/videos`);
     xhr.upload.onprogress = (e) => {

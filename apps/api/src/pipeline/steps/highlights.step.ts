@@ -74,6 +74,7 @@ export class HighlightsStep {
           endSec: w.endSec,
           durationBucket: w.durationBucket,
           status: 'candidate',
+          categoryId: video.categoryId,
         },
       });
       reelIds.push(reel.id);
