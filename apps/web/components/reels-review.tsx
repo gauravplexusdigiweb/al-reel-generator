@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReelDto } from '@arg/shared';
-import { ASPECT_RATIOS } from '@arg/shared';
 import { toast } from 'sonner';
 import { Download, Check, X, RefreshCw, Scissors, Star, Trash2, Save, Plus, Archive } from 'lucide-react';
-import { api, mediaUrl } from '@/lib/api';
+import { api, mediaUrl, ASPECT_RATIOS } from '@/lib/api';
 import { formatDuration, scorePct, scoreTone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';

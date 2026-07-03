@@ -60,7 +60,10 @@ export interface EffectiveSettings {
   karaoke: boolean;
 }
 
-export { ASPECT_RATIOS } from '@arg/shared';
+// Defined locally (not re-exported from @arg/shared) so the web client bundles no
+// runtime code from the CommonJS shared package — Next's dev Fast-Refresh loader
+// injects `import.meta` into workspace-symlinked files, which breaks CJS parsing.
+export const ASPECT_RATIOS = ['9:16', '1:1', '4:5'] as const;
 
 export const api = {
   // ---- Videos ----
