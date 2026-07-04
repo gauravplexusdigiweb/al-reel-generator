@@ -238,3 +238,45 @@ export interface ReelAnalyticsDto {
   completionRate: number | null;
   fetchedAt: string;
 }
+
+/**
+ * Connect a social account. Full browser OAuth needs a registered app + public
+ * redirect URL, so for local/personal use we accept a token you generate yourself
+ * (for the `webhook` platform, put the destination URL in `accessToken`).
+ */
+export interface ConnectAccountRequest {
+  accessToken: string;
+  refreshToken?: string;
+  displayName?: string;
+  platformMeta?: Record<string, unknown>;
+}
+
+export interface ManualAnalyticsRequest {
+  platform: SocialPlatform;
+  views?: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  watchTime?: number;
+  completionRate?: number;
+}
+
+/** Aggregate performance insights ("founder dashboard"), computed from analytics. */
+export interface InsightsDto {
+  totalReels: number;
+  publishedReels: number;
+  totals: { views: number; likes: number; comments: number; shares: number };
+  avgCompletionRate: number | null;
+  bestCategories: Array<{ categoryId: string | null; name: string; views: number; reels: number }>;
+  bestDurationBuckets: Array<{ durationBucket: number; avgViews: number; reels: number }>;
+  bestHooks: Array<{ tag: string; avgViews: number; reels: number }>;
+  bestUploadHours: Array<{ hour: number; avgViews: number; reels: number }>;
+  topReels: Array<{
+    reelId: string;
+    title: string | null;
+    views: number;
+    likes: number;
+    engagementRate: number;
+  }>;
+  recommendations: string[];
+}

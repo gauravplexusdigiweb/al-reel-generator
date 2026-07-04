@@ -15,9 +15,9 @@ export class PublishingController {
   }
 
   @Post('connect/:platform')
-  @ApiOperation({ summary: 'Connect a social account via OAuth' })
+  @ApiOperation({ summary: 'Connect a social account with a token (webhook: destination URL)' })
   connect(@Param('platform') platform: string, @Body() dto: ConnectAccountDto) {
-    return this.publishing.connectAccount(platform as never, dto.authCode, dto.displayName);
+    return this.publishing.connectAccount(platform, dto);
   }
 
   @Delete('accounts/:id')
@@ -32,7 +32,7 @@ export class PublishingController {
 export class ReelPublishingController {
   constructor(private readonly publishing: PublishingService) {}
 
-  @Post(':id/publish')
+  @Post(':id/social-publish')
   @ApiOperation({ summary: 'Publish a reel to one or more social platforms' })
   publish(@Param('id') id: string, @Body() dto: PublishReelDto) {
     return this.publishing.publish(id, dto);

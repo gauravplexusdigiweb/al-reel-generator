@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Share2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -9,6 +9,16 @@ import { api } from '@/lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,28 +31,33 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 
-const PLATFORMS: Array<{ id: string; name: string; icon: string; description: string }> = [
-  { id: 'instagram', name: 'Instagram', icon: '📸', description: 'Publish reels to Instagram' },
-  { id: 'youtube', name: 'YouTube Shorts', icon: '▶️', description: 'Upload as YouTube Shorts' },
-  { id: 'tiktok', name: 'TikTok', icon: '🎵', description: 'Post to TikTok' },
-  { id: 'webhook', name: 'Custom Webhook', icon: '🔗', description: 'POST to your own URL' },
-];
+const PLATFORMS = [
+  { id: 'webhook', name: 'Custom Webhook', icon: '🔗', description: 'POST reels to your own URL — works locally right now', tokenLabel: 'Webhook URL', tokenHint: 'e.g. https://webhook.site/xxxx', needsIg: false },
+  { id: 'instagram', name: 'Instagram', icon: '📸', description: 'Publish reels via the Instagram Graph API', tokenLabel: 'Access token', tokenHint: 'Graph API token with instagram_content_publish', needsIg: true },
+  { id: 'youtube', name: 'YouTube Shorts', icon: '▶️', description: 'Upload as YouTube Shorts (Data API)', tokenLabel: 'OAuth access token', tokenHint: 'Token with youtube.upload scope', needsIg: false },
+  { id: 'tiktok', name: 'TikTok', icon: '🎵', description: 'Post via the TikTok Content Posting API', tokenLabel: 'Access token', tokenHint: 'Token with video.publish scope', needsIg: false },
+] as const;
 
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<SocialAccountDto[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    api.getAccounts()
-      .then(setAccounts)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+  const reload = useCallback(async () => {
+    try {
+      setAccounts(await api.getAccounts());
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
 
   async function handleDisconnect(id: string) {
     try {
       await api.deleteAccount(id);
-      setAccounts(await api.getAccounts());
+      await reload();
       toast.success('Account disconnected');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to disconnect');
@@ -58,7 +73,8 @@ export default function AccountsPage() {
       <div>
         <h1 className="text-xl font-semibold">Connected Accounts</h1>
         <p className="text-sm text-muted-foreground">
-          Connect your social accounts to publish reels directly from the app.
+          Connect accounts to publish reels. Full browser OAuth needs a public app, so connect with a
+          token you generate (for Webhook, paste a destination URL — that one works locally today).
         </p>
       </div>
 
@@ -77,9 +93,7 @@ export default function AccountsPage() {
                     <CardDescription>{platform.description}</CardDescription>
                   </div>
                 </div>
-                <Button variant="outline" size="sm" disabled>
-                  Connect
-                </Button>
+                <ConnectDialog platform={platform} onConnected={reload} />
               </div>
             </CardHeader>
             {connected.length > 0 && (
@@ -106,7 +120,7 @@ export default function AccountsPage() {
                         <AlertDialogHeader>
                           <AlertDialogTitle>Disconnect &ldquo;{account.displayName}&rdquo;?</AlertDialogTitle>
                           <AlertDialogDescription>
-                            This will revoke access for this account. You can reconnect it anytime.
+                            This removes the stored token. You can reconnect anytime.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -123,5 +137,79 @@ export default function AccountsPage() {
         );
       })}
     </div>
+  );
+}
+
+function ConnectDialog({
+  platform,
+  onConnected,
+}: {
+  platform: (typeof PLATFORMS)[number];
+  onConnected: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [token, setToken] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [igUserId, setIgUserId] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function connect() {
+    if (!token.trim()) {
+      toast.error(`${platform.tokenLabel} is required`);
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.connectAccount(platform.id, {
+        accessToken: token.trim(),
+        displayName: displayName.trim() || undefined,
+        platformMeta: platform.needsIg && igUserId.trim() ? { igUserId: igUserId.trim() } : undefined,
+      });
+      toast.success(`${platform.name} connected`);
+      setToken('');
+      setDisplayName('');
+      setIgUserId('');
+      setOpen(false);
+      onConnected();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to connect');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          Connect
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Connect {platform.name}</DialogTitle>
+          <DialogDescription>{platform.tokenHint}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>{platform.tokenLabel}</Label>
+            <Input value={token} onChange={(e) => setToken(e.target.value)} placeholder={platform.tokenHint} />
+          </div>
+          {platform.needsIg && (
+            <div className="space-y-1.5">
+              <Label>Instagram user ID</Label>
+              <Input value={igUserId} onChange={(e) => setIgUserId(e.target.value)} placeholder="IG business account id" />
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <Label>Display name (optional)</Label>
+            <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="My account" />
+          </div>
+          <Button onClick={connect} disabled={busy} className="w-full">
+            Connect
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

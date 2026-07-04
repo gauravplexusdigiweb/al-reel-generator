@@ -7,6 +7,8 @@ import type {
   CategoryDto,
   SocialAccountDto,
   SocialPostDto,
+  InsightsDto,
+  ReelAnalyticsDto,
 } from '@arg/shared';
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000';
@@ -107,10 +109,25 @@ export const api = {
 
   // ---- Publishing ----
   getAccounts: () => req<SocialAccountDto[]>('/publishing/accounts'),
+  connectAccount: (
+    platform: string,
+    body: { accessToken: string; displayName?: string; refreshToken?: string; platformMeta?: Record<string, unknown> },
+  ) => req<SocialAccountDto>(`/publishing/connect/${platform}`, { method: 'POST', body: JSON.stringify(body) }),
   deleteAccount: (id: string) => req<void>(`/publishing/accounts/${id}`, { method: 'DELETE' }),
-  publishReel: (reelId: string, body: { accountIds: string[]; caption?: string; hashtags?: string[] }) =>
-    req<SocialPostDto[]>(`/reels/${reelId}/publish`, { method: 'POST', body: JSON.stringify(body) }),
+  publishReel: (
+    reelId: string,
+    body: { accountIds: string[]; caption?: string; hashtags?: string[]; scheduledAt?: string },
+  ) => req<SocialPostDto[]>(`/reels/${reelId}/social-publish`, { method: 'POST', body: JSON.stringify(body) }),
   getReelPosts: (reelId: string) => req<SocialPostDto[]>(`/reels/${reelId}/posts`),
+  retryPost: (postId: string) => req<SocialPostDto>(`/posts/${postId}/retry`, { method: 'POST', body: '{}' }),
+  deletePost: (postId: string) => req<void>(`/posts/${postId}`, { method: 'DELETE' }),
+
+  // ---- Analytics ----
+  getInsights: () => req<InsightsDto>('/analytics/insights'),
+  refreshAnalytics: () => req<{ queued: boolean }>('/analytics/refresh', { method: 'POST', body: '{}' }),
+  getReelAnalytics: (reelId: string) => req<ReelAnalyticsDto[]>(`/reels/${reelId}/analytics`),
+  recordAnalytics: (reelId: string, body: Record<string, unknown>) =>
+    req<ReelAnalyticsDto>(`/reels/${reelId}/analytics`, { method: 'POST', body: JSON.stringify(body) }),
 
   // ---- Settings ----
   getSettings: () => req<EffectiveSettings>('/settings'),

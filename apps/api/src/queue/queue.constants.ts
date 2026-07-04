@@ -1,9 +1,17 @@
 export const PIPELINE_QUEUE = 'reel-pipeline';
+export const PUBLISHING_QUEUE = 'reel-publishing';
 
 // DI tokens
 export const REDIS_CONNECTION = 'REDIS_CONNECTION';
 export const PIPELINE_QUEUE_TOKEN = 'PIPELINE_QUEUE_TOKEN';
 export const FLOW_PRODUCER_TOKEN = 'FLOW_PRODUCER_TOKEN';
+export const PUBLISHING_QUEUE_TOKEN = 'PUBLISHING_QUEUE_TOKEN';
+
+// Publishing job names
+export const PUBLISH_JOB = {
+  publish: 'publish-post',
+  refreshAnalytics: 'refresh-analytics',
+} as const;
 
 // Job names (one per pipeline step). Must match processor registrations.
 export const JOB = {

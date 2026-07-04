@@ -1,7 +1,7 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Clapperboard, Settings, FolderTree, Share2 } from 'lucide-react';
+import { Clapperboard, Settings, FolderTree, Share2, TrendingUp } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { ServiceHealth } from '@/components/service-health';
 import { ThemeProvider } from '@/lib/theme-provider';
@@ -35,6 +35,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </Link>
               <Link href="/accounts" className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
                 <Share2 className="h-4 w-4" /> Accounts
+              </Link>
+              <Link href="/insights" className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+                <TrendingUp className="h-4 w-4" /> Insights
               </Link>
             </nav>
             <div className="ml-auto flex items-center gap-2">

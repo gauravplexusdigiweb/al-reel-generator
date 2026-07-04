@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import type {
   CategoryDto,
   DurationBucket,
+  ReelAnalyticsDto,
   ReelDto,
   SocialAccountDto,
   SocialPostDto,
@@ -113,6 +114,21 @@ export class MapperService {
       scheduledAt: p.scheduledAt?.toISOString() ?? null,
       publishedAt: p.publishedAt?.toISOString() ?? null,
       createdAt: p.createdAt.toISOString(),
+    };
+  }
+
+  toReelAnalyticsDto(a: Prisma.ReelAnalyticsGetPayload<Record<string, never>>): ReelAnalyticsDto {
+    return {
+      id: a.id,
+      reelId: a.reelId,
+      platform: a.platform,
+      views: a.views,
+      likes: a.likes,
+      comments: a.comments,
+      shares: a.shares,
+      watchTime: a.watchTime,
+      completionRate: a.completionRate,
+      fetchedAt: a.fetchedAt.toISOString(),
     };
   }
 

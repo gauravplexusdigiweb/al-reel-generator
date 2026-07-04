@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReelDto } from '@arg/shared';
 import { toast } from 'sonner';
-import { Download, Check, X, RefreshCw, Scissors, Star, Trash2, Save, Plus, Archive } from 'lucide-react';
+import { Download, Check, X, RefreshCw, Scissors, Star, Trash2, Save, Plus, Archive, Send } from 'lucide-react';
+import { SocialPublishDialog } from '@/components/social-publish-dialog';
 import { api, mediaUrl, ASPECT_RATIOS } from '@/lib/api';
 import { formatDuration, scorePct, scoreTone } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -287,6 +288,7 @@ function ReelReviewPanel({
 }) {
   const [range, setRange] = useState<[number, number]>([reel.startSec, reel.endSec]);
   const [busy, setBusy] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [title, setTitle] = useState(reel.suggestedTitle ?? '');
   const [tags, setTags] = useState<string[]>(reel.tags);
   const [tagInput, setTagInput] = useState('');
@@ -476,6 +478,11 @@ function ReelReviewPanel({
               Publish
             </Button>
             {fileUrl && (
+              <Button size="sm" disabled={busy} onClick={() => setShareOpen(true)}>
+                <Send className="mr-1 h-3 w-3" /> Share
+              </Button>
+            )}
+            {fileUrl && (
               <Button size="sm" variant="outline" asChild>
                 <a href={api.downloadUrl(reel.id)}>
                   <Download className="mr-1 h-3 w-3" /> Download
@@ -509,6 +516,14 @@ function ReelReviewPanel({
           </div>
         </div>
       </div>
+
+      <SocialPublishDialog
+        reelId={reel.id}
+        defaultCaption={reel.suggestedTitle ?? ''}
+        defaultTags={reel.tags}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+      />
     </>
   );
 }
