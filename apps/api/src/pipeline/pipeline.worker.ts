@@ -9,8 +9,11 @@ import { TranscodeStep } from './steps/transcode.step';
 import { TranscribeStep } from './steps/transcribe.step';
 import { ScenesStep } from './steps/scenes.step';
 import { FacesStep } from './steps/faces.step';
+import { NsfwStep } from './steps/nsfw.step';
+import { IdentitiesStep } from './steps/identities.step';
 import { HighlightsStep } from './steps/highlights.step';
 import { RenderStep } from './steps/render.step';
+import { TeaserRenderStep } from './steps/teaser-render.step';
 import { FinalizeStep } from './steps/finalize.step';
 
 const JOB_TO_STEP: Record<string, PipelineStep | undefined> = {
@@ -19,6 +22,8 @@ const JOB_TO_STEP: Record<string, PipelineStep | undefined> = {
   [JOB.transcribe]: 'transcribe',
   [JOB.scenes]: 'scenes',
   [JOB.faces]: 'faces',
+  [JOB.nsfw]: 'nsfw',
+  [JOB.identities]: 'identities',
   [JOB.highlights]: 'highlights',
   [JOB.render]: 'render',
   [JOB.finalize]: 'render',
@@ -38,8 +43,11 @@ export class PipelineWorker implements OnModuleInit, OnModuleDestroy {
     private readonly transcribe: TranscribeStep,
     private readonly scenes: ScenesStep,
     private readonly faces: FacesStep,
+    private readonly nsfw: NsfwStep,
+    private readonly identities: IdentitiesStep,
     private readonly highlights: HighlightsStep,
     private readonly render: RenderStep,
+    private readonly teaserRender: TeaserRenderStep,
     private readonly finalize: FinalizeStep,
   ) {}
 
@@ -91,15 +99,25 @@ export class PipelineWorker implements OnModuleInit, OnModuleDestroy {
         await this.linear('scenes', videoId, () => this.scenes.run(videoId), 'faces');
         break;
       case JOB.faces:
-        await this.linear('faces', videoId, () => this.faces.run(videoId), 'highlights');
+        await this.linear('faces', videoId, () => this.faces.run(videoId), 'nsfw');
+        break;
+      case JOB.nsfw:
+        await this.linear('nsfw', videoId, () => this.nsfw.run(videoId), 'identities');
+        break;
+      case JOB.identities:
+        await this.linear('identities', videoId, () => this.identities.run(videoId), 'highlights');
         break;
       case JOB.highlights:
         // "next" (render fan-out) is enqueued inside the step itself.
         await this.linear('highlights', videoId, () => this.highlights.run(videoId));
         break;
-      case JOB.render:
-        await this.render.run(videoId, job.data.reelId);
+      case JOB.render: {
+        // Teaser variants render as montages; reels render as single clips.
+        const reel = await this.render.getReelKind(videoId, job.data.reelId);
+        if (reel === 'teaser') await this.teaserRender.run(videoId, job.data.reelId);
+        else await this.render.run(videoId, job.data.reelId);
         break;
+      }
       case JOB.finalize:
         await this.finalize.run(videoId);
         break;

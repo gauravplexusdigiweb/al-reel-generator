@@ -8,7 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { PipelineDispatcher } from '../queue/pipeline-dispatcher.service';
 import { MapperService } from '../common/mapper.service';
-import { CreateReelDto } from './dto';
+import { CreateReelDto, UploadOptions } from './dto';
 
 @Injectable()
 export class VideosService {
@@ -24,20 +24,36 @@ export class VideosService {
     this.allowedFormats = config.get('upload', { infer: true }).allowedFormats;
   }
 
-  async createFromUpload(file: Express.Multer.File, categoryId?: string): Promise<{ videoId: string }> {
+  async createFromUpload(
+    file: Express.Multer.File | undefined,
+    music: Express.Multer.File | undefined,
+    opts: UploadOptions = {},
+  ): Promise<{ videoId: string }> {
     if (!file) throw new BadRequestException('No file uploaded (field "file")');
     const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
     if (!this.allowedFormats.includes(ext)) {
       await this.storage.remove(file.path);
+      if (music) await this.storage.remove(music.path);
       throw new BadRequestException(
         `Unsupported format ".${ext}". Allowed: ${this.allowedFormats.join(', ')}`,
       );
     }
 
-    if (categoryId) {
-      const cat = await this.prisma.category.findUnique({ where: { id: categoryId } });
+    if (opts.categoryId) {
+      const cat = await this.prisma.category.findUnique({ where: { id: opts.categoryId } });
       if (!cat) throw new BadRequestException('Category not found');
     }
+
+    // Coerce multipart string fields.
+    const outputType = opts.outputType === 'teaser' ? 'teaser' : 'reel';
+    const adultThreshold = Math.max(0, Math.min(100, Math.round(Number(opts.adultThreshold ?? 0)) || 0));
+    const teaserCount = Math.max(1, Math.min(5, Math.round(Number(opts.teaserCount ?? 3)) || 3));
+    let musicSource = ['original', 'custom', 'none'].includes(opts.musicSource ?? '')
+      ? (opts.musicSource as string)
+      : 'original';
+    const captionsEnabled = opts.captionsEnabled !== 'false';
+    if (music && musicSource !== 'none') musicSource = 'custom';
+    else if (musicSource === 'custom' && !music) musicSource = 'original'; // no file → fall back
 
     const video = await this.prisma.video.create({
       data: {
@@ -45,16 +61,26 @@ export class VideosService {
         storedPath: '',
         status: 'uploaded',
         sizeBytes: BigInt(file.size),
-        categoryId: categoryId ?? null,
+        categoryId: opts.categoryId ?? null,
+        outputType,
+        adultThreshold,
+        teaserCount,
+        musicSource,
+        captionsEnabled,
       },
     });
 
     const dest = this.storage.originalPath(video.id, ext);
     await this.storage.moveInto(file.path, dest);
-    await this.prisma.video.update({
-      where: { id: video.id },
-      data: { storedPath: this.storage.rel(dest) },
-    });
+    const data: { storedPath: string; musicPath?: string } = { storedPath: this.storage.rel(dest) };
+
+    if (music) {
+      const mExt = path.extname(music.originalname) || '.mp3';
+      const mDest = path.join(this.storage.videoDir(video.id), `music${mExt}`);
+      await this.storage.moveInto(music.path, mDest);
+      data.musicPath = this.storage.rel(mDest);
+    }
+    await this.prisma.video.update({ where: { id: video.id }, data });
 
     await this.dispatcher.startPipeline(video.id);
     return { videoId: video.id };

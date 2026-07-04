@@ -3,11 +3,15 @@ import { Prisma } from '@prisma/client';
 import type {
   CategoryDto,
   DurationBucket,
+  MusicSource,
+  OutputType,
   ReelAnalyticsDto,
   ReelDto,
+  ReelKind,
   SocialAccountDto,
   SocialPostDto,
   StepStatusDto,
+  TeaserBeat,
   TranscriptSegment,
   VideoDto,
   VideoStatusDto,
@@ -45,6 +49,10 @@ export class MapperService {
       sizeBytes: v.sizeBytes === null ? null : Number(v.sizeBytes),
       language: v.language,
       categoryId: v.categoryId,
+      outputType: v.outputType as OutputType,
+      adultThreshold: v.adultThreshold,
+      teaserCount: v.teaserCount,
+      musicSource: v.musicSource as MusicSource,
       createdAt: v.createdAt.toISOString(),
     };
   }
@@ -64,6 +72,8 @@ export class MapperService {
       needsRerender: r.needsRerender,
       aspectRatio: r.aspectRatio,
       categoryId: r.categoryId,
+      kind: r.kind as ReelKind,
+      segments: (r.segments as unknown as TeaserBeat[]) ?? null,
       score: r.score
         ? {
             hook: r.score.hook,

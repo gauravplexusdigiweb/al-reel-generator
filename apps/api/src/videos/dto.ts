@@ -30,3 +30,13 @@ export class MoveVideoDto {
   @IsString()
   categoryId?: string | null;
 }
+
+/** Multipart upload options — fields arrive as strings and are coerced in the service. */
+export class UploadOptions {
+  @ApiPropertyOptional() @IsOptional() @IsString() categoryId?: string;
+  @ApiPropertyOptional({ enum: ['reel', 'teaser'] }) @IsOptional() @IsString() outputType?: string;
+  @ApiPropertyOptional({ description: 'Adult filter 0=off..100=strictest' }) @IsOptional() @IsString() adultThreshold?: string;
+  @ApiPropertyOptional({ description: 'Teaser variants 1..5' }) @IsOptional() @IsString() teaserCount?: string;
+  @ApiPropertyOptional({ enum: ['original', 'custom', 'none'] }) @IsOptional() @IsString() musicSource?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() captionsEnabled?: string;
+}

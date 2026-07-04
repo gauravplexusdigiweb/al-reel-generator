@@ -9,15 +9,15 @@ import {
   Post,
   Query,
   Res,
-  UploadedFile,
+  UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import archiver from 'archiver';
 import { VideosService } from './videos.service';
-import { CreateReelDto, MoveVideoDto } from './dto';
+import { CreateReelDto, MoveVideoDto, UploadOptions } from './dto';
 
 @ApiTags('videos')
 @Controller('videos')
@@ -25,14 +25,19 @@ export class VideosController {
   constructor(private readonly videos: VideosService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Upload a video and start the reel-generation pipeline' })
+  @ApiOperation({ summary: 'Upload a video (+ optional custom music) and start generation' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'file', maxCount: 1 },
+      { name: 'music', maxCount: 1 },
+    ]),
+  )
   async upload(
-    @UploadedFile() file: Express.Multer.File,
-    @Body('categoryId') categoryId?: string,
+    @UploadedFiles() files: { file?: Express.Multer.File[]; music?: Express.Multer.File[] },
+    @Body() body: UploadOptions,
   ) {
-    return this.videos.createFromUpload(file, categoryId);
+    return this.videos.createFromUpload(files.file?.[0], files.music?.[0], body);
   }
 
   @Get()

@@ -180,3 +180,39 @@ export function buildCaptions(
     ? buildKaraokeAss(segments, reelStart, reelEnd, style, dims)
     : buildAssSubtitle(segments, reelStart, reelEnd, style, dims);
 }
+
+/**
+ * Standalone animated text overlay for one teaser beat: a **big** centered title
+ * (with a subtle pop) or a **small** lower caption — both fade in/out. Null if empty.
+ */
+export function buildBeatTextAss(
+  text: string,
+  durationSec: number,
+  size: 'big' | 'small',
+  dims: Dims = DEFAULT_DIMS,
+): string | null {
+  const clean = escapeText(text || '');
+  if (!clean) return null;
+  const big = size === 'big';
+  const fontSize = Math.round(dims.h * (big ? 0.075 : 0.04));
+  const marginV = Math.round(dims.h * (big ? 0.0 : 0.12));
+  const alignment = big ? 5 : 2; // 5 = middle-center, 2 = bottom-center
+  const header = [
+    '[Script Info]',
+    'ScriptType: v4.00+',
+    `PlayResX: ${dims.w}`,
+    `PlayResY: ${dims.h}`,
+    'WrapStyle: 0',
+    '',
+    '[V4+ Styles]',
+    'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
+    `Style: Beat,Arial,${fontSize},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,${big ? 5 : 4},2,${alignment},80,80,${marginV},1`,
+    '',
+    '[Events]',
+    'Format: Layer, Start, End, Style, MarginL, MarginR, MarginV, Effect, Text',
+  ].join('\n');
+  const fade = big ? 350 : 200;
+  const pop = big ? '{\\fscx80\\fscy80\\t(0,300,\\fscx104\\fscy104)}' : '';
+  const body = `Dialogue: 0,${assTime(0)},${assTime(durationSec)},Beat,,0,0,0,,{\\fad(${fade},${fade})}${pop}${clean}`;
+  return `${header}\n${body}\n`;
+}

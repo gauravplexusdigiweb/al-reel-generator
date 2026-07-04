@@ -257,11 +257,20 @@ function ReelCard({ reel, onOpen }: { reel: ReelDto; onOpen: () => void }) {
               rendering…
             </div>
           )}
-          <div className="absolute left-2 top-2 flex gap-1">
-            <Badge variant={scoreTone(overall)}>{scorePct(overall)}</Badge>
+          <div className="absolute left-2 top-2 flex flex-wrap gap-1">
+            {reel.kind === 'teaser' ? (
+              <Badge variant="default" className="bg-fuchsia-600 hover:bg-fuchsia-600">Teaser</Badge>
+            ) : (
+              <Badge variant={scoreTone(overall)}>{scorePct(overall)}</Badge>
+            )}
             <Badge variant="outline" className="bg-black/60">
-              {formatDuration(reel.endSec - reel.startSec)}
+              {formatDuration(reelDurationSec(reel))}
             </Badge>
+            {reel.kind === 'teaser' && reel.segments && reel.segments.length > 0 && (
+              <Badge variant="outline" className="bg-black/60">
+                {reel.segments.length} beats
+              </Badge>
+            )}
           </div>
           <div className="absolute right-2 top-2">
             <Badge variant={STATUS_VARIANT[reel.status]}>{reel.status}</Badge>

@@ -36,6 +36,12 @@ export class RenderStep {
     private readonly settings: SettingsService,
   ) {}
 
+  /** Whether a render job should be handled as a reel or a teaser montage. */
+  async getReelKind(_videoId: string, reelId: string): Promise<string> {
+    const r = await this.prisma.reel.findUnique({ where: { id: reelId }, select: { kind: true } });
+    return r?.kind ?? 'reel';
+  }
+
   async run(videoId: string, reelId: string, onProgress?: (pct: number) => void): Promise<void> {
     const { sampleFps, captionPreset, karaoke } = await this.settings.effective();
     // Mark the aggregate render step active on the first child.

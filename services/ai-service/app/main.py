@@ -40,6 +40,16 @@ class FacesReq(BaseModel):
     fps: float = 2.0
 
 
+class NsfwReq(BaseModel):
+    frames_dir: str
+    fps: float = 2.0
+
+
+class IdentitiesReq(BaseModel):
+    frames_dir: str
+    fps: float = 2.0
+
+
 # --------------------------- model loaders ----------------------------
 @lru_cache(maxsize=4)
 def get_whisper(model_name: str):
@@ -56,6 +66,34 @@ def get_face_detector():
 
     # model_selection=1 = full-range model (better for varied distances)
     return mp.solutions.face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.4)
+
+
+@lru_cache(maxsize=1)
+def get_nsfw_detector():
+    from nudenet import NudeDetector
+
+    return NudeDetector()
+
+
+@lru_cache(maxsize=1)
+def get_face_app():
+    from insightface.app import FaceAnalysis
+
+    app_ = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
+    app_.prepare(ctx_id=-1, det_size=(640, 640))
+    return app_
+
+
+# Classes NudeNet reports for exposed nudity.
+_NUDE_CLASSES = {
+    "FEMALE_BREAST_EXPOSED",
+    "FEMALE_GENITALIA_EXPOSED",
+    "MALE_GENITALIA_EXPOSED",
+    "BUTTOCKS_EXPOSED",
+    "ANUS_EXPOSED",
+    "MALE_BREAST_EXPOSED",
+    "FEMALE_GENITALIA_COVERED",
+}
 
 
 # --------------------------- endpoints --------------------------------
@@ -146,6 +184,84 @@ def faces(req: FacesReq) -> dict:
                 )
         samples.append({"t": round(t, 3), "boxes": boxes})
     return {"samples": samples}
+
+
+@app.post("/nsfw")
+def nsfw(req: NsfwReq) -> dict:
+    """Per-sampled-second NSFW score (0..1) using NudeNet exposed-class detections."""
+    frames = sorted(glob.glob(os.path.join(req.frames_dir, "frame-*.jpg")))
+    if not frames:
+        return {"samples": []}
+    try:
+        det = get_nsfw_detector()
+    except Exception as exc:  # nudenet not installed
+        raise HTTPException(status_code=500, detail=f"nudenet unavailable: {exc}")
+    samples = []
+    for idx, fp in enumerate(frames):
+        t = idx / max(0.001, req.fps)
+        score = 0.0
+        try:
+            for d in det.detect(fp) or []:
+                if d.get("class") in _NUDE_CLASSES:
+                    score = max(score, float(d.get("score", 0.0)))
+        except Exception:
+            pass
+        samples.append({"t": round(t, 3), "score": round(score, 4)})
+    return {"samples": samples}
+
+
+@app.post("/identities")
+def identities(req: IdentitiesReq) -> dict:
+    """Cluster faces into people (InsightFace embeddings) with first-appearance + prominence."""
+    frames = sorted(glob.glob(os.path.join(req.frames_dir, "frame-*.jpg")))
+    if not frames:
+        return {"people": []}
+    try:
+        fa = get_face_app()
+    except Exception as exc:  # insightface not installed
+        raise HTTPException(status_code=500, detail=f"insightface unavailable: {exc}")
+    import numpy as np
+
+    clusters = []  # {emb, count, firstT, sizes[]}
+    for idx, fp in enumerate(frames):
+        img = cv2.imread(fp)
+        if img is None:
+            continue
+        t = idx / max(0.001, req.fps)
+        h, w = img.shape[:2]
+        try:
+            found = fa.get(img)
+        except Exception:
+            continue
+        for f in found:
+            emb = f.normed_embedding
+            box = f.bbox
+            size = float(max(0.0, (box[2] - box[0]) * (box[3] - box[1])) / (w * h))
+            best, bi = -1.0, -1
+            for i, c in enumerate(clusters):
+                sim = float(np.dot(emb, c["emb"]))
+                if sim > best:
+                    best, bi = sim, i
+            if best > 0.45 and bi >= 0:
+                c = clusters[bi]
+                c["count"] += 1
+                c["sizes"].append(size)
+                mean = (c["emb"] * (c["count"] - 1) + emb) / c["count"]
+                c["emb"] = mean / (np.linalg.norm(mean) + 1e-9)
+            else:
+                clusters.append({"emb": emb, "count": 1, "firstT": t, "sizes": [size]})
+
+    people = [
+        {
+            "personId": f"p{i}",
+            "firstSeenSec": round(c["firstT"], 3),
+            "appearances": c["count"],
+            "avgSize": round(float(np.mean(c["sizes"])), 4),
+        }
+        for i, c in enumerate(clusters)
+    ]
+    people.sort(key=lambda p: p["appearances"] * p["avgSize"], reverse=True)
+    return {"people": people[:8]}
 
 
 # --------------------------- helpers ----------------------------------

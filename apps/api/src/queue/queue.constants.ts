@@ -20,8 +20,10 @@ export const JOB = {
   transcribe: 'transcribe',
   scenes: 'scenes',
   faces: 'faces',
+  nsfw: 'nsfw',
+  identities: 'identities',
   highlights: 'highlights',
-  render: 'render', // fan-out: one render job per candidate reel
+  render: 'render', // fan-out: one render job per candidate reel / teaser variant
   finalize: 'finalize',
 } as const;
 

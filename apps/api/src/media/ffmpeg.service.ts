@@ -136,6 +136,83 @@ export class FfmpegService {
     );
   }
 
+  /**
+   * Render one teaser beat: cut [start,+dur] and apply a full -vf chain (crop/blur +
+   * effect + text). Normalized to 30fps / yuv420p / setsar=1 so beats concat cleanly.
+   */
+  async renderClip(opts: {
+    input: string;
+    output: string;
+    startSec: number;
+    durationSec: number;
+    vf: string;
+  }): Promise<void> {
+    const { input, output, startSec, durationSec, vf } = opts;
+    await fs.mkdir(path.dirname(output), { recursive: true });
+    await this.run([
+      '-ss', startSec.toFixed(3),
+      '-i', input,
+      '-t', durationSec.toFixed(3),
+      '-vf', `${vf},fps=30,format=yuv420p,setsar=1`,
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
+      '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
+      output,
+    ]);
+  }
+
+  /** Concatenate normalized clips (re-encode) into one file. */
+  async concatClips(listFile: string, output: string): Promise<void> {
+    await fs.mkdir(path.dirname(output), { recursive: true });
+    await this.run([
+      '-f', 'concat', '-safe', '0', '-i', listFile,
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
+      '-c:a', 'aac', '-b:a', '128k',
+      '-movflags', '+faststart',
+      output,
+    ]);
+  }
+
+  /**
+   * Mix a music bed under a video's audio (or replace it), then loudness-normalize.
+   * `keepOriginal` ducks the montage's own audio under the music instead of dropping it.
+   */
+  async mixMusic(opts: {
+    videoInput: string;
+    musicInput: string;
+    output: string;
+    musicVolume?: number;
+    keepOriginal?: boolean;
+  }): Promise<void> {
+    const { videoInput, musicInput, output, musicVolume = 0.7, keepOriginal = true } = opts;
+    await fs.mkdir(path.dirname(output), { recursive: true });
+    const filter = keepOriginal
+      ? `[1:a]volume=${musicVolume},aloop=loop=-1:size=2e9[m];[0:a]volume=1.0[v];[v][m]amix=inputs=2:duration=first:dropout_transition=0,loudnorm=I=-16:TP=-1.5:LRA=11[a]`
+      : `[1:a]volume=${musicVolume},aloop=loop=-1:size=2e9,loudnorm=I=-16:TP=-1.5:LRA=11[a]`;
+    await this.run([
+      '-i', videoInput,
+      '-i', musicInput,
+      '-filter_complex', filter,
+      '-map', '0:v', '-map', '[a]',
+      '-c:v', 'copy',
+      '-c:a', 'aac', '-b:a', '160k',
+      '-shortest',
+      '-movflags', '+faststart',
+      output,
+    ]);
+  }
+
+  /** Extract an audio window from any input (video or audio) to a WAV. */
+  async extractAudioWindow(input: string, output: string, startSec: number, durationSec: number): Promise<void> {
+    await fs.mkdir(path.dirname(output), { recursive: true });
+    await this.run([
+      '-ss', startSec.toFixed(3),
+      '-t', durationSec.toFixed(3),
+      '-i', input,
+      '-vn', '-ac', '2', '-ar', '48000', '-c:a', 'pcm_s16le',
+      output,
+    ]);
+  }
+
   /** Extract a segment of an audio file (no re-encode for WAV). */
   async extractAudioChunk(input: string, output: string, startSec: number, durationSec: number): Promise<void> {
     await fs.mkdir(path.dirname(output), { recursive: true });

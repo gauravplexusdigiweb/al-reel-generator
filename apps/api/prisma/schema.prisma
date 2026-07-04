@@ -24,6 +24,8 @@ enum PipelineStep {
   transcribe
   scenes
   faces
+  nsfw
+  identities
   highlights
   render
 }
@@ -92,6 +94,13 @@ model Video {
   language         String?
   categoryId       String?
   error            String?
+  // Generation options chosen at upload
+  outputType       String      @default("reel") // reel | teaser
+  adultThreshold   Int         @default(0)      // 0=off .. 100=strictest NSFW filtering
+  teaserCount      Int         @default(3)      // 1..5 teaser variants
+  musicSource      String      @default("original") // original | custom | none
+  musicPath        String?     // uploaded custom music (relative to DATA_DIR)
+  captionsEnabled  Boolean     @default(true)
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
@@ -100,6 +109,8 @@ model Video {
   transcript  VideoTranscript?
   scenes      VideoScene[]
   faces       VideoFace?
+  nsfw        VideoNsfw?
+  identity    VideoIdentity?
   audio       VideoAudio?
   renditions  VideoRendition[]
   reels       Reel[]
@@ -171,6 +182,26 @@ model VideoFace {
   @@map("video_faces")
 }
 
+model VideoNsfw {
+  id      String @id @default(cuid())
+  videoId String @unique
+  samples Json // [{ t, score }] per sampled second (0..1)
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@map("video_nsfw")
+}
+
+model VideoIdentity {
+  id      String @id @default(cuid())
+  videoId String @unique
+  people  Json // [{ personId, firstSeenSec, appearances, avgSize }]
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@map("video_identities")
+}
+
 model VideoAudio {
   id         String @id @default(cuid())
   videoId    String @unique
@@ -188,7 +219,9 @@ model Reel {
   videoId        String
   startSec       Float
   endSec         Float
-  durationBucket Int // 15 | 30 | 45 | 60
+  durationBucket Int // 15 | 30 | 45 | 60 (nominal; for teasers = total montage length)
+  kind           String     @default("reel") // reel | teaser
+  segments       Json?      // teaser beat list: [{ startSec, endSec, effect?, transition?, text?, textStyle? }]
   status         ReelStatus @default(candidate)
   filePath       String?
   previewPath    String?

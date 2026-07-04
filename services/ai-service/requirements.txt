@@ -7,3 +7,8 @@ opencv-python-headless==4.10.0.84
 mediapipe==0.10.18
 numpy==1.26.4
 requests==2.32.3
+# Adult/NSFW filtering (Phase A) and face-identity clustering for teaser main-actor entry (Phase C).
+# Both are optional at runtime — the pipeline degrades gracefully if a model isn't available.
+nudenet==3.4.2
+insightface==0.7.3
+onnxruntime==1.19.2

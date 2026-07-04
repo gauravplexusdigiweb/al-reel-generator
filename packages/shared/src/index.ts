@@ -13,6 +13,8 @@ export type PipelineStep =
   | 'transcribe'
   | 'scenes'
   | 'faces'
+  | 'nsfw'
+  | 'identities'
   | 'highlights'
   | 'render';
 
@@ -22,9 +24,38 @@ export const PIPELINE_STEPS: PipelineStep[] = [
   'transcribe',
   'scenes',
   'faces',
+  'nsfw',
+  'identities',
   'highlights',
   'render',
 ];
+
+export type OutputType = 'reel' | 'teaser';
+export type ReelKind = 'reel' | 'teaser';
+export type MusicSource = 'original' | 'custom' | 'none';
+
+export interface NsfwSample {
+  t: number;
+  score: number; // 0..1
+}
+
+export interface PersonIdentity {
+  personId: string;
+  firstSeenSec: number;
+  appearances: number;
+  avgSize: number; // 0..1 normalized face area
+}
+
+/** One beat of a teaser montage. Times are absolute in the source video. */
+export interface TeaserBeat {
+  startSec: number;
+  endSec: number;
+  role: 'intro' | 'hook' | 'peak' | 'moneyshot';
+  effect?: 'zoom-in' | 'zoom-out' | 'flash' | 'none';
+  transition?: 'fade' | 'slideleft' | 'wiperight' | 'cut';
+  text?: string;
+  textSize?: 'big' | 'small';
+}
 
 export type JobState = 'pending' | 'active' | 'completed' | 'failed';
 
@@ -108,6 +139,8 @@ export interface ReelDto {
   needsRerender: boolean;
   aspectRatio: string;
   categoryId: string | null;
+  kind: ReelKind;
+  segments: TeaserBeat[] | null;
   score: ReelScoreDto | null;
   thumbnails: ThumbnailDto[];
   transcript: TranscriptSegment[];
@@ -126,6 +159,10 @@ export interface VideoDto {
   sizeBytes: number | null;
   language: string | null;
   categoryId: string | null;
+  outputType: OutputType;
+  adultThreshold: number;
+  teaserCount: number;
+  musicSource: MusicSource;
   createdAt: string;
 }
 

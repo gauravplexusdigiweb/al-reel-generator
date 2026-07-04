@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import type { AppConfig } from '../config/configuration';
-import type { FaceSample, SceneDto, TranscriptSegment } from '@arg/shared';
+import type { FaceSample, NsfwSample, PersonIdentity, SceneDto, TranscriptSegment } from '@arg/shared';
 
 export interface TranscribeResult {
   language: string | null;
@@ -68,6 +68,26 @@ export class AiClientService {
       return (data.samples ?? []) as FaceSample[];
     } catch (e) {
       this.logger.warn(`faces unavailable, returning none (center-crop fallback): ${e}`);
+      return [];
+    }
+  }
+
+  async detectNsfw(framesDir: string, fps: number): Promise<NsfwSample[]> {
+    try {
+      const { data } = await this.http.post('/nsfw', { frames_dir: framesDir, fps });
+      return (data.samples ?? []) as NsfwSample[];
+    } catch (e) {
+      this.logger.warn(`nsfw unavailable, returning none (no adult filtering): ${e}`);
+      return [];
+    }
+  }
+
+  async detectIdentities(framesDir: string, fps: number): Promise<PersonIdentity[]> {
+    try {
+      const { data } = await this.http.post('/identities', { frames_dir: framesDir, fps });
+      return (data.people ?? []) as PersonIdentity[];
+    } catch (e) {
+      this.logger.warn(`identities unavailable, returning none: ${e}`);
       return [];
     }
   }

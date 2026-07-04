@@ -138,16 +138,32 @@ export const api = {
   servicesHealth: () => req<ServicesHealth>('/health/services'),
 };
 
+export interface UploadOpts {
+  categoryId?: string;
+  outputType?: 'reel' | 'teaser';
+  adultThreshold?: number;
+  teaserCount?: number;
+  musicSource?: 'original' | 'custom' | 'none';
+  captionsEnabled?: boolean;
+  music?: File | null;
+}
+
 /** Upload with progress via XHR (fetch can't report upload progress reliably). */
 export function uploadVideo(
   file: File,
   onProgress?: (pct: number) => void,
-  categoryId?: string,
+  opts: UploadOpts = {},
 ): Promise<{ videoId: string }> {
   return new Promise((resolve, reject) => {
     const form = new FormData();
     form.append('file', file);
-    if (categoryId) form.append('categoryId', categoryId);
+    if (opts.categoryId) form.append('categoryId', opts.categoryId);
+    if (opts.outputType) form.append('outputType', opts.outputType);
+    if (opts.adultThreshold !== undefined) form.append('adultThreshold', String(opts.adultThreshold));
+    if (opts.teaserCount !== undefined) form.append('teaserCount', String(opts.teaserCount));
+    if (opts.musicSource) form.append('musicSource', opts.musicSource);
+    if (opts.captionsEnabled !== undefined) form.append('captionsEnabled', String(opts.captionsEnabled));
+    if (opts.music) form.append('music', opts.music);
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${API_BASE}/videos`);
     xhr.upload.onprogress = (e) => {
