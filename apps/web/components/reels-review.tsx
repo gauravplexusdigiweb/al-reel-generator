@@ -242,6 +242,14 @@ function NewClipDialog({
   );
 }
 
+/** Playback length: teasers are the sum of their beats; reels are the [start,end] span. */
+function reelDurationSec(reel: ReelDto): number {
+  if (reel.kind === 'teaser' && reel.segments && reel.segments.length > 0) {
+    return reel.segments.reduce((s, b) => s + Math.max(0, b.endSec - b.startSec), 0);
+  }
+  return reel.endSec - reel.startSec;
+}
+
 function ReelCard({ reel, onOpen }: { reel: ReelDto; onOpen: () => void }) {
   const thumb = reel.thumbnails.find((t) => t.selected) ?? reel.thumbnails[0];
   const overall = reel.score?.overall ?? 0;

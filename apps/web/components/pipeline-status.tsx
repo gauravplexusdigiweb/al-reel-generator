@@ -11,6 +11,8 @@ const STEP_LABEL: Record<StepStatusDto['step'], string> = {
   transcribe: 'Speech-to-text',
   scenes: 'Scene detection',
   faces: 'Face detection',
+  nsfw: 'Adult-content scan',
+  identities: 'Cast detection',
   highlights: 'Highlight detection',
   render: 'Render reels',
 };

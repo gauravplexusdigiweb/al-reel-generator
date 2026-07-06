@@ -85,7 +85,7 @@ function header(style: CaptionStyle, karaoke: boolean, dims: Dims): string {
     `Style: Default,${style.fontName},${style.fontSize},${primary},${secondary},${style.outline},&H80000000,${bold},0,0,0,100,100,0,0,1,${style.outlineWidth},${style.shadow},2,80,80,${style.marginV},1`,
     '',
     '[Events]',
-    'Format: Layer, Start, End, Style, MarginL, MarginR, MarginV, Effect, Text',
+    'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
   ].join('\n');
 }
 
@@ -209,7 +209,7 @@ export function buildBeatTextAss(
     `Style: Beat,Arial,${fontSize},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,${big ? 5 : 4},2,${alignment},80,80,${marginV},1`,
     '',
     '[Events]',
-    'Format: Layer, Start, End, Style, MarginL, MarginR, MarginV, Effect, Text',
+    'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
   ].join('\n');
   const fade = big ? 350 : 200;
   const pop = big ? '{\\fscx80\\fscy80\\t(0,300,\\fscx104\\fscy104)}' : '';
